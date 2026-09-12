@@ -24,8 +24,7 @@ A desktop engineering agent that uses LLM as brain and deterministic guardrails 
 
 The core value of Forge is:
 
-- completion verification (don't trust "model says done")
-- guardrails (permission, write journal, stuck detection)
+- guardrails (permission + approval modes, write journal, stuck detection)
 - usage/context tracking (token counters + compaction watermark)
 - recovery (event log, crash resume, audit trail)
 
@@ -40,7 +39,7 @@ Two layers, one codebase.
 Responsible for:
 
 - assembling Pi AgentLoopConfig with guardrail hooks
-- guardrails: permission, verification, cost, stuck detection
+- guardrails: permission, approval, stuck detection
 - event log + SSE streaming
 - crash recovery
 - HTTP API + desktop UI
@@ -105,7 +104,7 @@ Forge does not duplicate Pi capabilities.
 
 Pi already has: agent loop, tools, compaction, multi-provider, streaming, extensions.
 
-Forge adds: guardrails, verification, event log, recovery, UI.
+Forge adds: guardrails, event log, recovery, UI.
 
 If Pi has it, use it. Don't rebuild.
 
@@ -134,17 +133,14 @@ Discipline for crossing (economics, not purity):
 
 ### Rule 5.1
 
-Completion is not trusted.
-
-The LLM saying "I'm done" does not mean done.
-
-Completion requires verification, configured by trust level:
-
-- low: model stops → done (chat/questions)
-- medium: model stops → run build/test → pass → done
-- high: model stops → run all criteria + evaluator → pass → done
-
-This is enforced in `shouldStopAfterTurn` hook.
+The model is the strongest brain — its "done" IS done.
+(2026-09-12: the entire client-side completion-verification apparatus —
+trust levels, success criteria, the deterministic evaluator, the
+steer-back-on-fail loop and the verification panel — is retired. It
+second-guessed the model with brittle scripted checks and manufactured
+approval noise. What bounds a run is Rule 5.3 stuck detection, Rule 5.5
+error recovery, the approval gate on dangerous commands, and the user's
+Stop.)
 
 ### Rule 5.2
 
@@ -228,29 +224,16 @@ in Pi's protocol adapters when it happens — not in Forge hooks.
 
 ---
 
-## 6. Verification Rules
+## 6. Command Safety Rules
 
 ### Rule 6.1
 
-Verification is deterministic.
-
-Bad: "The model thinks the code is correct."
-
-Good:
-
-```
-file_exists
-file_contains
-command_exit_zero
-test_pass
-git_diff_contains
-directory_exists
-file_not_contains
-```
+The model's completion is accepted. Forge constrains behavior before tools
+execute; it does not run a second completion judge.
 
 ### Rule 6.2
 
-Verification commands are restricted.
+Read-only bash commands are restricted.
 
 Only these run automatically:
 - project runners: npm/pnpm/yarn/bun test|lint|typecheck|build
@@ -262,11 +245,11 @@ Anything else requires an explicit Guard allow rule.
 
 ### Rule 6.3
 
-Every verification produces evidence.
+Every guard decision produces evidence.
 
 ```
-What was checked?
-How was it checked?
+What tool was requested?
+Which policy decided it?
 What was the result?
 ```
 
@@ -338,7 +321,6 @@ Every guardrail must have a UI entry point.
 | Guardrail | UI component |
 |---|---|
 | Guard ask (approval) | ApprovalDialog (real-time popup) + 审批 level in the run picker (每次询问 / 默认 / 始终允许) |
-| Completion verification | VerificationPanel (appears on verification FAILURE; a passing run shows nothing) |
 | Usage & context | header token meter (↑in ↓out · ctx watermark) |
 | Stuck detection | In-place notice in the transcript |
 | Steering | Mid-run input box |
@@ -347,28 +329,15 @@ Every guardrail must have a UI entry point.
 | Session management | SessionList + StatusBar |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |
-| Run config (subscription + verification + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); all three switch live |
-| Completion verification | Composer/ModelPicker level select (`low`/`medium`/`high`, labelled 不校验/标准/严格) + VerificationPanel |
+| Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |
 | Reasoning effort | Composer/ModelPicker level select (`thinkingLevel`, labelled 关/极低/低/中/高/极高/最大) — hidden when the model is not a reasoner |
 | Abort/resume | Stop button + Resume button (completed = follow-up) |
 
-The run-config popover holds **three orthogonal axes**. Do not merge them into
+The run-config popover holds **two orthogonal axes**. Do not merge them into
 one control or reuse one name for another:
 
 - **Model subscription** — which provider/model answers (`POST /sessions/:id/model`).
-- **Completion verification** — how hard Forge checks the result before calling it done (`POST /sessions/:id/trust`).
 - **Reasoning effort** — how hard the *model* thinks before answering (`POST /sessions/:id/thinking`).
-
-`trustLevel` is the storage/API name for **completion-verification strictness**,
-not model reasoning effort: `low` accepts the model's stop, `medium` runs the
-criteria or the project's `npm test`, `high` adds the deterministic evaluator.
-The raw word never reaches the user — the UI shows 不校验 / 标准 / 严格
-(`desktop/src/lib/verification.ts` is the single source of those labels).
-Default is `medium` (both ends), so a session started by a raw API call is
-verified rather than silently unverified.
-Mid-session switches are `POST /sessions/:id/trust`; the guardrail re-reads
-`config.completion` every turn boundary, so a running session picks the new
-level up on its next turn without a relaunch.
 
 `thinkingLevel` is the reasoning-effort axis (`Session.thinkingLevel`, default
 `medium`; `"off"` means the model is not asked to reason). It rides Pi's own
@@ -424,7 +393,7 @@ without a live run.
 `window.Notification`, then runs a REAL SSE stream, to check the task-outcome
 notification path end to end. Notifications fire **only while the window is
 hidden**: with the window visible the outcome is already on screen (timeline
-notice, verification panel, sidebar status), so a notification would be noise.
+notice and sidebar status), so a notification would be noise.
 The server emits exactly two terminal event types — `SESSION_FAILED`, and
 `SESSION_ENDED` for everything else including cancellation, which is why
 `payload.status` (not the event type) decides the outcome.
@@ -436,7 +405,7 @@ Guardrails and UI are designed together.
 Build order:
 1. Agent runner (Pi loop + hooks)
 2. Guardrails + event types + HTTP API (同期 — 护栏产出事件，API 传输事件，UI 消费事件)
-3. Completion verification + stuck detection
+3. Stuck detection
 4. Desktop UI (consume event stream + collect user input)
 5. Recovery + compaction + steering
 6. Benchmark

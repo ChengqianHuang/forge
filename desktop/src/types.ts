@@ -1,7 +1,6 @@
 /** Mirror of the server-side Session model (src/types.ts) — keep in sync. */
 
 export type SessionStatus = "running" | "completed" | "failed" | "cancelled";
-export type TrustLevel = "low" | "medium" | "high";
 
 /**
  * Reasoning effort, mirroring Pi's `ThinkingLevel` (pi-agent-core). `"off"`
@@ -11,7 +10,6 @@ export type TrustLevel = "low" | "medium" | "high";
  */
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-/** Approval posture — mirror of the server's ApprovalMode. */
 export type ApprovalMode = "ask" | "default" | "always";
 
 export interface Session {
@@ -24,7 +22,6 @@ export interface Session {
   failureReason: string | null;
   usage: SessionUsage;
   approvalMode: ApprovalMode;
-  trustLevel: TrustLevel;
   thinkingLevel: ThinkingLevel;
   createdAt: number;
   updatedAt: number;
@@ -103,13 +100,6 @@ export interface ToolCallView {
   running: boolean;
 }
 
-/** Verification result as rendered in the VerificationPanel. */
-export interface VerificationView {
-  round: number;
-  passed: boolean;
-  reason: string | null;
-}
-
 export interface ApprovalRecordView {
   requestId: string;
   toolName: string;
@@ -150,7 +140,6 @@ export type TimelineEntry =
 /** Reduced view state derived from the SSE event stream. */
 export interface ConversationView {
   timeline: TimelineEntry[];
-  verification: VerificationView[];
   /** Cumulative token usage + context watermark (USAGE_UPDATE events). */
   usage: { tokensIn: number; tokensOut: number; contextTokens: number | null };
   /** Updated by MODEL_CHANGED events (mid-session model switch). */
@@ -159,8 +148,6 @@ export interface ConversationView {
   providerId: string | null;
   /** Updated by APPROVAL_MODE_CHANGED events (mid-session approval switch). */
   approvalMode: ApprovalMode | null;
-  /** Updated by TRUST_CHANGED events (mid-session verification switch). */
-  trustLevel: TrustLevel | null;
   /** Updated by THINKING_CHANGED events (mid-session reasoning switch). */
   thinkingLevel: ThinkingLevel | null;
 }

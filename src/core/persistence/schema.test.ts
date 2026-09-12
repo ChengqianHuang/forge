@@ -24,8 +24,6 @@ describe("session schema migration", () => {
     assert.equal(out.status, "completed");
     assert.equal(out.goal, "create hello.txt");
     assert.equal(out.workspace, "/tmp/project");
-    assert.equal(out.trustLevel, "medium");
-    assert.deepEqual(out.completionCriteria, []);
     assert.equal("plan" in out, false);
     assert.equal("fixCount" in out, false);
     assert.ok(String(out.id).startsWith("session_"));

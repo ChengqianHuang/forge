@@ -26,8 +26,6 @@ export const goldenCreateFile: GoldenTask = {
   name: "golden_create_file",
   category: "new-feature",
   goal: "Create hello.txt saying hello",
-  trustLevel: "medium",
-  criteria: [{ kind: "file_contains", path: "hello.txt", pattern: "hello" }],
   script: createFileScript,
   assert: ({ session, metrics, workspace, runtime }) => {
     const a: Assertion[] = [];
@@ -36,7 +34,6 @@ export const goldenCreateFile: GoldenTask = {
       pass: metrics.state === "completed",
       detail: `state=${metrics.state} reason=${session.failureReason}`,
     });
-    a.push({ name: "vfail=0", pass: metrics.vfail === 0, detail: `sequence=${JSON.stringify(metrics.verificationSequence)}` });
     a.push({ name: "script consumed exactly", pass: !runtime.overran() && runtime.consumed() === 2, detail: `consumed=${runtime.consumed()}` });
     const p = join(workspace, "hello.txt");
     const content = existsSync(p) ? readFileSync(p, "utf8") : "";
@@ -46,46 +43,6 @@ export const goldenCreateFile: GoldenTask = {
 };
 
 // ---------------------------------------------------------------------------
-// golden_verify_fail — the verify-fix loop (don't trust "model says done").
-// ---------------------------------------------------------------------------
-const verifyFailScript = (ws: string): Script => [
-  W("call-1", join(ws, "util.ts"), "function util() {}\n"), // buggy: no export
-  scriptedAssistantMessage([text("Done! util.ts created.")]), // verification FAILS
-  W("call-2", join(ws, "util.ts"), "export function util(): number {\n  return 42;\n}\n"), // the fix
-  scriptedAssistantMessage([text("Fixed — export added.")]), // verification PASSES
-];
-
-export const goldenVerifyFail: GoldenTask = {
-  name: "golden_verify_fail",
-  category: "verification",
-  goal: "Create util.ts with an export (model forgets, verification catches)",
-  trustLevel: "high",
-  criteria: [{ kind: "file_contains", path: "util.ts", pattern: "export" }],
-  script: verifyFailScript,
-  assert: ({ session, metrics, workspace, runtime }) => {
-    const a: Assertion[] = [];
-    a.push({
-      name: "state=completed",
-      pass: metrics.state === "completed",
-      detail: `state=${metrics.state} reason=${session.failureReason}`,
-    });
-    a.push({
-      name: "verification sequence [false, true]",
-      pass:
-        metrics.verificationSequence.length === 2 &&
-        metrics.verificationSequence[0] === false &&
-        metrics.verificationSequence[1] === true,
-      detail: JSON.stringify(metrics.verificationSequence),
-    });
-    a.push({ name: "eval score present (high trust)", pass: metrics.evalScore !== null, detail: `eval=${metrics.evalScore}` });
-    a.push({ name: "script consumed exactly", pass: !runtime.overran() && runtime.consumed() === 4, detail: `consumed=${runtime.consumed()}` });
-    const p = join(workspace, "util.ts");
-    const content = existsSync(p) ? readFileSync(p, "utf8") : "";
-    a.push({ name: "final file has export", pass: content.includes("export"), detail: JSON.stringify(content.slice(0, 40)) });
-    return a;
-  },
-};
-
 // ---------------------------------------------------------------------------
 // golden_stuck_loop — stuck detection terminates the burn before cost does.
 // ---------------------------------------------------------------------------
@@ -104,8 +61,6 @@ export const goldenStuckLoop: GoldenTask = {
   name: "golden_stuck_loop",
   category: "recovery",
   goal: "Agent repeats an identical write forever (stuck)",
-  trustLevel: "medium",
-  criteria: [],
   script: () => stuckScript(10),
   assert: ({ metrics, runtime, session }) => {
     const a: Assertion[] = [];
@@ -144,11 +99,6 @@ export const goldenMultiStep: GoldenTask = {
   name: "golden_multi_step",
   category: "new-feature",
   goal: "Create util.ts and main.ts that imports it",
-  trustLevel: "medium",
-  criteria: [
-    { kind: "file_contains", path: "util.ts", pattern: "export function add" },
-    { kind: "file_contains", path: "main.ts", pattern: "add" },
-  ],
   script: multiStepScript,
   assert: ({ session, metrics, workspace, runtime }) => {
     const a: Assertion[] = [];
@@ -157,7 +107,6 @@ export const goldenMultiStep: GoldenTask = {
       pass: metrics.state === "completed",
       detail: `state=${metrics.state} reason=${session.failureReason}`,
     });
-    a.push({ name: "vfail=0", pass: metrics.vfail === 0, detail: `sequence=${JSON.stringify(metrics.verificationSequence)}` });
     a.push({ name: "script consumed exactly", pass: !runtime.overran() && runtime.consumed() === 3, detail: `consumed=${runtime.consumed()}` });
     const util = join(workspace, "util.ts");
     const main = join(workspace, "main.ts");
@@ -173,4 +122,4 @@ export const goldenMultiStep: GoldenTask = {
   },
 };
 
-export const GOLDEN_TASKS = [goldenCreateFile, goldenVerifyFail, goldenStuckLoop, goldenMultiStep];
+export const GOLDEN_TASKS = [goldenCreateFile, goldenStuckLoop, goldenMultiStep];

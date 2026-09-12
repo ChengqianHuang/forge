@@ -166,11 +166,7 @@ function migrateLegacyTaskToSession(raw: Record<string, unknown>): Record<string
     failureReason: legacyFailure ?? (status === "cancelled" ? "migrated from legacy task state" : null),
     usage: { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null },
     approvalMode: "default",
-    trustLevel: "medium",
     thinkingLevel: "off",
-    completionCriteria: [],
-    lastEvaluation: raw.lastEvaluation ?? null,
-    maxTurns: null,
     createdAt: typeof raw.createdAt === "number" ? raw.createdAt : Date.now(),
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
     // legacy fields deliberately dropped:

@@ -52,8 +52,6 @@ async function main(): Promise<void> {
     const { sessionId } = await manager.create({
       goal: GOAL,
       projectId: project.id,
-      trustLevel: "medium",
-      criteria: [{ kind: "file_contains", path: "hello.txt", pattern: "hello from minimax" }],
     });
     console.log(`  session: ${sessionId} workspace: ${workspace}`);
 
@@ -94,9 +92,7 @@ async function main(): Promise<void> {
       content.includes("hello from minimax") &&
       !thinkLeak &&
       events.some((e) => e.type === "TOOL_CALL") &&
-      events.some((e) => e.type === "VERIFICATION_RESULT" && (e.payload as { passed?: boolean }).passed === true);
-
-    console.log(`\nREAL-LLM SMOKE: ${ok ? "PASS" : "FAIL"}`);
+      events.every((e) => e.type !== "GUARD_BLOCKED");
   } finally {
     rmSync(forgeHome, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });

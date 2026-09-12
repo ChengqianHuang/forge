@@ -13,10 +13,6 @@ export interface RunMetrics {
   wallMs: number;
   turns: number;
   tokens: number;
-  vfail: number;
-  vpass: number;
-  verificationSequence: boolean[];
-  evalScore: number | null;
   stuckPatterns: string[];
   retries: number;
 }
@@ -29,19 +25,9 @@ export function extractMetrics(input: {
 }): RunMetrics {
   const { session, events, wallMs, scriptedErrorTurns } = input;
 
-  const verification = events.filter((e) => e.type === "VERIFICATION_RESULT");
-  const verificationSequence = verification.map(
-    (e) => (e.payload as { passed?: boolean }).passed === true,
-  );
-
   const stuckPatterns = events
     .filter((e) => e.type === "STUCK_WARNING")
     .map((e) => (e.payload as { pattern?: string }).pattern ?? "unknown");
-
-  const evalScore =
-    session.lastEvaluation && typeof session.lastEvaluation.score === "number"
-      ? session.lastEvaluation.score
-      : null;
 
   return {
     // Terminal state derived from the session's own records (direct
@@ -53,10 +39,6 @@ export function extractMetrics(input: {
     wallMs,
     turns: session.messages.length,
     tokens: session.usage.tokensIn + session.usage.tokensOut,
-    vfail: verificationSequence.filter((p) => !p).length,
-    vpass: verificationSequence.filter((p) => p).length,
-    verificationSequence,
-    evalScore,
     stuckPatterns,
     retries: scriptedErrorTurns,
   };
@@ -64,6 +46,5 @@ export function extractMetrics(input: {
 
 /** ROADMAP §7 style single-line report. */
 export function formatReportLine(name: string, category: string, goal: string, m: RunMetrics): string {
-  const evalPart = m.evalScore === null ? "-" : String(m.evalScore);
-  return `  -> state=${m.state} wall=${m.wallMs}ms turns=${m.turns} tok=$${m.tokens} vfail=${m.vfail} eval=${evalPart}${m.stuckPatterns.length > 0 ? ` stuck=${m.stuckPatterns.join(",")}` : ""} [${category}] ${goal} (${name})`;
+  return `  -> state=${m.state} wall=${m.wallMs}ms turns=${m.turns} tok=${m.tokens}${m.stuckPatterns.length > 0 ? ` stuck=${m.stuckPatterns.join(",")}` : ""} [${category}] ${goal} (${name})`;
 }

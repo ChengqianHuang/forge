@@ -54,7 +54,6 @@ const sessions = [
     failureReason: null,
     usage: { tokensIn: 3360, tokensOut: 840, cacheRead: 0, cacheWrite: 0, lastContextTokens: 3560 },
     approvalMode: "default" as const,
-    trustLevel: "medium" as const,
     thinkingLevel: "medium" as const,
     createdAt: now - 40 * MIN,
     updatedAt: now - 30_000,
@@ -69,7 +68,6 @@ const sessions = [
     failureReason: null,
     usage: { tokensIn: 9040, tokensOut: 2260, cacheRead: 0, cacheWrite: 0, lastContextTokens: 9240 },
     approvalMode: "default" as const,
-    trustLevel: "high" as const,
     thinkingLevel: "high" as const,
     createdAt: now - 26 * 60 * MIN,
     updatedAt: now - 3 * 60 * MIN,
@@ -84,7 +82,6 @@ const sessions = [
     failureReason: null,
     usage: { tokensIn: 640, tokensOut: 160, cacheRead: 0, cacheWrite: 0, lastContextTokens: 840 },
     approvalMode: "default" as const,
-    trustLevel: "low" as const,
     thinkingLevel: "off" as const,
     createdAt: now - 50 * 60 * MIN,
     updatedAt: now - 40 * 60 * MIN,
@@ -96,10 +93,9 @@ const sessions = [
     projectId: "p1",
     model: { provider: "prov-1", modelId: "MiniMax-M2.7" },
     status: "failed" as const,
-    failureReason: "verification failed after 3 recovery attempts",
+    failureReason: "stuck detected: monologue (4 consecutive turns without tool calls)",
     usage: { tokensIn: 6160, tokensOut: 1540, cacheRead: 0, cacheWrite: 0, lastContextTokens: 6360 },
     approvalMode: "default" as const,
-    trustLevel: "medium" as const,
     thinkingLevel: "medium" as const,
     createdAt: now - 5 * 24 * 60 * MIN,
     updatedAt: now - 5 * 24 * 60 * MIN,
@@ -114,7 +110,6 @@ const sessions = [
     failureReason: null,
     usage: { tokensIn: 4400, tokensOut: 1100, cacheRead: 0, cacheWrite: 0, lastContextTokens: 4600 },
     approvalMode: "default" as const,
-    trustLevel: "medium" as const,
     thinkingLevel: "medium" as const,
     createdAt: now - 8 * 24 * 60 * MIN,
     updatedAt: now - 8 * 24 * 60 * MIN,
@@ -200,10 +195,6 @@ const timeline: TimelineEntry[] = [
   },
 ];
 
-const verification = [
-  { round: 1, passed: false, reason: "typecheck: TS2345 in src/cli/print.ts" },
-  { round: 2, passed: true, reason: "npm test · typecheck · 3 criteria" },
-];
 
 /** scene=replay: fold the captured frames of a real session through the real
  *  stream reducer, so ordering bugs show up here instead of in a live run. */
@@ -224,12 +215,10 @@ store.setState({
     scene === "session"
       ? {
           timeline,
-          verification,
           usage: { tokensIn: 4200, tokensOut: 900, contextTokens: 45000 },
           providerId: "prov_primary",
           approvalMode: "default",
           modelId: null,
-          trustLevel: null,
           thinkingLevel: null,
         }
       : scene === "replay"
@@ -240,22 +229,18 @@ store.setState({
                 { kind: "user", id: "u1", text: "Add a --json flag to the CLI and cover it with tests" },
                 { kind: "assistant", id: "a1", text: "", streaming: true, thinking: true },
               ] as TimelineEntry[],
-              verification: [],
               usage: { tokensIn: 300, tokensOut: 60, contextTokens: 12000 },
               providerId: "prov_primary",
           approvalMode: "default",
               modelId: null,
-              trustLevel: null,
               thinkingLevel: null,
             }
           : {
               timeline: [],
-              verification: [],
               usage: { tokensIn: 0, tokensOut: 0, contextTokens: null },
               providerId: null,
               approvalMode: null,
               modelId: null,
-              trustLevel: null,
               thinkingLevel: null,
             },
 });
@@ -367,7 +352,6 @@ createRoot(document.getElementById("root")!).render(
           modelId={replay ? "MiniMax-M2.7" : active.model.modelId}
           providerId={replay ? "prov_primary" : active.model.provider}
           approvalMode={replay ? "default" : active.approvalMode}
-          trustLevel={replay ? "low" : active.trustLevel}
           thinkingLevel={replay ? "off" : active.thinkingLevel}
         />
       )}
@@ -392,8 +376,6 @@ createRoot(document.getElementById("root")!).render(
           onSelectModel={() => {}}
           approvalMode="default"
           onSelectApprovalMode={() => {}}
-          trustLevel="medium"
-          onSelectTrust={() => {}}
           thinkingLevel="medium"
           thinkingLevels={["off", "minimal", "low", "medium", "high"]}
           onSelectThinking={() => {}}

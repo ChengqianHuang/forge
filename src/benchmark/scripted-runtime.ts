@@ -7,7 +7,7 @@
  * coding tools against a real (temp) workspace, and the full guardrail
  * hook set.
  *
- * Modeled on the proven pattern in src/cli/smoke-verification.ts.
+ * Modeled on the scripted-stream pattern used by the agent-loop smoke tests.
  */
 import {
   EventStream,

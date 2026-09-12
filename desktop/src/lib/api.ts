@@ -54,9 +54,7 @@ export async function createSession(input: {
   goal: string;
   projectId?: string;
   providerId?: string;
-  trustLevel: "low" | "medium" | "high";
   thinkingLevel?: ThinkingLevel;
-  criteria?: Array<{ kind: string; [k: string]: unknown }>;
 }): Promise<{ sessionId: string }> {
   return send("/sessions", "POST", input);
 }
@@ -90,15 +88,6 @@ export async function resumeSession(id: string, message?: string): Promise<void>
 
 export async function switchModel(id: string, providerId: string): Promise<{ modelId: string }> {
   return send(`/sessions/${id}/model`, "POST", { providerId });
-}
-
-/** Completion-verification level. Running sessions pick it up at the next
- * turn boundary; idle ones persist it for the next resume. */
-export async function switchTrust(
-  id: string,
-  trustLevel: "low" | "medium" | "high",
-): Promise<{ trustLevel: string }> {
-  return send(`/sessions/${id}/trust`, "POST", { trustLevel });
 }
 
 /** Reasoning effort (Pi's thinking level). Running sessions pick it up at the

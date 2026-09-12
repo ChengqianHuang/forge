@@ -3,7 +3,7 @@ import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
-import type { ApprovalMode, ProviderConfig, ThinkingLevel, TimelineEntry, TrustLevel } from "../types.ts";
+import type { ApprovalMode, ProviderConfig, ThinkingLevel, TimelineEntry } from "../types.ts";
 
 /** One-line argument summary for a tool row (the full JSON lives behind expand). */
 function summarizeArgs(args: unknown): string {
@@ -49,43 +49,6 @@ function Notice({ entry }: { entry: Extract<TimelineEntry, { kind: "notice" }> }
       <span className="notice-icon" aria-hidden="true">{entry.icon}</span>
       <span>{entry.text}</span>
     </div>
-  );
-}
-
-/**
- * Criteria feed — shown ONLY when verification failed.
- *
- * A green "PASS round 1" after every single run is noise (PM, 2026-09-12):
- * it repeats what "completed" already says. The actionable case is a failure
- * — that is when the user needs to see which round failed and why the agent
- * is being steered back.
- */
-function VerificationPanel() {
-  const verification = store((s) => s.conversation.verification);
-  if (verification.length === 0) return null;
-  const last = verification[verification.length - 1]!;
-  if (verification.every((v) => v.passed)) return null;
-  return (
-    <section className="verify" data-state={last.passed ? "pass" : "fail"}>
-      <div className="verify-head">
-        <span className="verify-title">Verification</span>
-        <span className={`verify-badge ${last.passed ? "ok" : "bad"}`}>
-          {last.passed ? "passed" : "failed"}
-        </span>
-      </div>
-      {verification.map((v, i) => (
-        <div key={i} className="verify-row">
-          <span className={`verify-mark ${v.passed ? "ok" : "bad"}`}>{v.passed ? "PASS" : "FAIL"}</span>
-          <span className="verify-reason">
-            round {v.round}
-            {v.reason ? ` — ${v.reason}` : ""}
-          </span>
-        </div>
-      ))}
-      {!last.passed && (
-        <div className="verify-foot">The agent is being steered back to fix the failure…</div>
-      )}
-    </section>
   );
 }
 
@@ -145,7 +108,6 @@ export function SessionView({
   modelId,
   providerId,
   approvalMode,
-  trustLevel,
   thinkingLevel,
 }: {
   sessionId: string;
@@ -156,7 +118,6 @@ export function SessionView({
   /** Session.model.provider — the picker's key (authoritative namespace). */
   providerId: string;
   approvalMode: ApprovalMode;
-  trustLevel: TrustLevel;
   thinkingLevel: ThinkingLevel;
 }) {
   const conversation = store((s) => s.conversation);
@@ -179,8 +140,6 @@ export function SessionView({
   // code) silently picked the first subscription whenever two share a model,
   // highlighting the wrong row and reading the wrong model's capabilities.
   const effectiveProviderId = conversation.providerId ?? providerId;
-  // TRUST_CHANGED events do the same for the verification level.
-  const effectiveTrust: TrustLevel = conversation.trustLevel ?? trustLevel;
   // THINKING_CHANGED events do the same for the reasoning effort.
   const effectiveThinking: ThinkingLevel = conversation.thinkingLevel ?? thinkingLevel;
   // APPROVAL_MODE_CHANGED events do the same for the approval posture.
@@ -232,20 +191,8 @@ export function SessionView({
     }
   };
 
-  // Completion-verification switch. A running session picks it up at the next
-  // turn boundary; the server echoes TRUST_CHANGED so the UI updates live.
-  const onTrustSwitch = async (level: TrustLevel) => {
-    if (level === effectiveTrust) return;
-    try {
-      const { switchTrust } = await import("../lib/api.ts");
-      await switchTrust(sessionId, level);
-    } catch (err) {
-      console.error("verification switch failed:", err);
-    }
-  };
-
-  // Reasoning-effort switch. Same contract as verification: applied at the
-  // next turn boundary, echoed back as THINKING_CHANGED.
+  // Reasoning-effort switch: applied at the next turn boundary and echoed
+  // back as THINKING_CHANGED.
   const onThinkingSwitch = async (level: ThinkingLevel) => {
     if (level === effectiveThinking) return;
     try {
@@ -400,8 +347,6 @@ export function SessionView({
             );
           })}
 
-          <VerificationPanel />
-
           {failureReason && (
             <div className="notice notice-warn">
               <span className="notice-icon" aria-hidden="true">✕</span>
@@ -437,8 +382,6 @@ export function SessionView({
                   activeProviderId={effectiveProviderId ?? null}
                   activeModelLabel={effectiveModelId || undefined}
                   onSelectModel={(id) => void onModelSwitch(id)}
-                  trustLevel={effectiveTrust}
-                  onSelectTrust={(level) => void onTrustSwitch(level)}
                   thinkingLevel={effectiveThinking}
                   thinkingLevels={thinkingLevels}
                   onSelectThinking={(level) => void onThinkingSwitch(level)}

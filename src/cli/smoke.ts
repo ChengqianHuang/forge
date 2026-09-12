@@ -123,10 +123,7 @@ async function main(): Promise<void> {
     failureReason: null,
     usage: { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null },
     approvalMode: "default",
-    trustLevel: "low",
     thinkingLevel: "off",
-    completionCriteria: [],
-    lastEvaluation: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

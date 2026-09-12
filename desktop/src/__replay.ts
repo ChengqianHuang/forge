@@ -380,15 +380,6 @@ export const REPLAY: EventEnvelope[] = [
   }
  },
  {
-  "type": "VERIFICATION_RESULT",
-  "at": 1788997975129,
-  "payload": {
-   "round": 1,
-   "passed": true,
-   "reason": null
-  }
- },
- {
   "type": "COST_UPDATE",
   "at": 1788997975129,
   "payload": {
@@ -784,15 +775,6 @@ export const REPLAY: EventEnvelope[] = [
     "timestamp": 1788997987189,
     "responseId": "06f1246348094748447ec135bcb171a1"
    }
-  }
- },
- {
-  "type": "VERIFICATION_RESULT",
-  "at": 1788997989631,
-  "payload": {
-   "round": 1,
-   "passed": true,
-   "reason": null
   }
  },
  {
@@ -1276,15 +1258,6 @@ export const REPLAY: EventEnvelope[] = [
     "responseId": "06f12471835e47d659ecd343c65d96c4",
     "rawStopReason": "end_turn"
    }
-  }
- },
- {
-  "type": "VERIFICATION_RESULT",
-  "at": 1788998004474,
-  "payload": {
-   "round": 1,
-   "passed": true,
-   "reason": null
   }
  },
  {

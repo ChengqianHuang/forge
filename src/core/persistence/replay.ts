@@ -7,11 +7,11 @@ import { readEvents, type PersistedEvent } from "./event-log.ts";
  * `messages` is the authoritative reconstruction: each entry comes from a
  * `MESSAGE_ENDED` payload (terminal state, not streaming snapshots). Audit
  * events like `STUCK_WARNING`, `COST_UPDATE`, `GUARD_BLOCKED`,
- * `VERIFICATION_RESULT`, `STEERING_QUEUED`, `SESSION_*` are deliberately
+ * `STEERING_QUEUED`, `SESSION_*` are deliberately
  * NOT replayed — they describe guardrail activity, not conversation state.
  * Recovering guardrail state would mean re-running policy decisions on
  * historical events, which we don't want; instead, the session's persisted
- * `cost.total` is loaded separately and fed into a fresh UsageTracker.
+ * usage counters are loaded separately and fed into a fresh UsageTracker.
  *
  * Note on pairing: Pi's `AgentMessage` (UserMessage / AssistantMessage /
  * ToolResultMessage) has no `id` field — id is a `SessionEntry` concept

@@ -68,7 +68,7 @@ describe("replaySession", () => {
 
     // More audit events.
     await appendEvent(sessionId, "STEERING_QUEUED", { message: "steer" });
-    await appendEvent(sessionId, "VERIFICATION_RESULT", { ok: true });
+    await appendEvent(sessionId, "STUCK_WARNING", { ok: true });
 
     const r = await replaySession(sessionId);
     assert.equal(r.messages.length, 3);

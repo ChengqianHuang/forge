@@ -19,11 +19,8 @@ import type {
   Session,
   SessionStatus,
   ApprovalMode,
-  TrustLevel,
   ThinkingLevel,
-  CompletionConfig,
 } from "../types.ts";
-import type { SuccessCriterion } from "../core/types/criterion.ts";
 
 /**
  * Everything that exists only while one run of a session is live. The
@@ -38,12 +35,11 @@ type SessionRuntime = {
   steeringQueue: AgentMessage[];
   usage: import("../guardrails/usage-tracker.ts").UsageTracker;
   /**
-   * Live completion config — the *same object* handed to the guardrails in
-   * `launchAgent`. `makeShouldStopAfterTurn` re-reads `config.completion` at
-   * every turn boundary, so mutating `trustLevel` here takes effect on the
-   * next turn without a new hook or a relaunch.
+   * The guardrails object handed to `runAgent` — kept live on the runtime so
+   * `switchApprovalMode()` can mutate `guardrails.approvalMode` and the very
+   * next tool call sees the new posture (no turn boundary, no relaunch).
    */
-  completion: CompletionConfig;
+  guardrails: import("../guardrails/types.ts").GuardrailConfig;
   /**
    * Mid-session model switch: `switchModel()` parks a pre-built Model here;
    * the prepareNextTurn hook picks it up at the next turn boundary and hands
@@ -57,6 +53,8 @@ type SessionRuntime = {
    * at most once.
    */
   pendingThinking: ThinkingLevel | null;
+  /** Set by the user's Stop action; never reinterpret it as an agent failure. */
+  stopRequested: boolean;
 };
 
 /**
@@ -95,9 +93,7 @@ export class SessionManager {
     goal: string;
     projectId?: string | undefined;
     providerId?: string | undefined;
-    trustLevel?: TrustLevel | undefined;
     thinkingLevel?: ThinkingLevel | undefined;
-    criteria?: SuccessCriterion[] | undefined;
     approvalMode?: ApprovalMode | undefined;
   }): Promise<{ sessionId: string }> {
     // 1. Resolve the subscription (explicit providerId or the default one).
@@ -118,7 +114,6 @@ export class SessionManager {
 
     // 3. Session record.
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const trustLevel: TrustLevel = input.trustLevel ?? "medium";
     // Pi's own default (coding-agent/core/defaults.ts). Only sent when the
     // model actually supports reasoning — see runAgent's gate.
     const thinkingLevel: ThinkingLevel = input.thinkingLevel ?? "medium";
@@ -133,10 +128,7 @@ export class SessionManager {
       failureReason: null,
       usage: { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null },
       approvalMode: input.approvalMode ?? "default",
-      trustLevel,
       thinkingLevel,
-      completionCriteria: input.criteria ?? [],
-      lastEvaluation: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -149,11 +141,7 @@ export class SessionManager {
       session,
       subscription,
       usage,
-      {
-        trustLevel,
-        criteria: input.criteria ?? [],
-        approvalMode: session.approvalMode,
-      },
+      session.approvalMode,
     );
 
     return { sessionId };
@@ -254,16 +242,11 @@ export class SessionManager {
     //     already in the replayed history; re-sending it would re-run the
     //     finished task).
     const wasCompleted = priorStatus === "completed";
-    const launchOpts = {
-      trustLevel: session.trustLevel,
-      criteria: session.completionCriteria,
-      // Turn budget is persisted since schema v5 and survives resume.
-    };
     await this.launchAgent(
       session,
       subscription,
       usage,
-      launchOpts,
+      session.approvalMode,
       wasCompleted ? opts?.message : undefined,
     );
 
@@ -313,38 +296,7 @@ export class SessionManager {
     return { modelId: subscription.modelId };
   }
 
-  /**
-   * Mid-session completion-verification switch. `trustLevel` decides how hard
-   * "the model says it is done" is checked: low accepts the stop (chat /
-   * questions), medium runs the criteria or, failing those, the project's
-   * `npm test`, high adds the deterministic evaluator on top.
-   *
-   * A running session picks this up at the next turn boundary: the guardrail
-   * destructures `config.completion` on every turn, so mutating the live
-   * object is enough — no queue, no relaunch. An idle session just persists it
-   * for the next resume.
-   */
-  async switchTrust(
-    sessionId: string,
-    trustLevel: TrustLevel,
-  ): Promise<{ trustLevel: TrustLevel }> {
-    const session = await loadSession(sessionId);
-    if (!session) throw new Error(`session ${sessionId} not found`);
-
-    session.trustLevel = trustLevel;
-    session.updatedAt = Date.now();
-    await saveSession(session);
-
-    // The running loop holds the live completion object on its runtime — the
-    // persisted write above does not reach it — so mutate that copy directly.
-    const runtime = this.runtimes.get(sessionId);
-    if (runtime) runtime.completion.trustLevel = trustLevel;
-
-    await appendEvent(sessionId, "TRUST_CHANGED", { trustLevel }).catch(() => {});
-    return { trustLevel };
-  }
-
-  /**
+    /**
    * Mid-session thinking-level switch — the reasoning effort sent with each
    * provider request (`"off"` sends none). Mirrors switchModel(): a running
    * session parks the level for the next turn boundary, where Pi's loop picks
@@ -394,7 +346,7 @@ export class SessionManager {
     await saveSession(session);
 
     const runtime = this.runtimes.get(sessionId);
-    if (runtime) runtime.completion.approvalMode = approvalMode;
+    if (runtime) runtime.guardrails.approvalMode = approvalMode;
 
     await appendEvent(sessionId, "APPROVAL_MODE_CHANGED", { approvalMode }).catch(() => {});
     return { approvalMode };
@@ -414,18 +366,34 @@ export class SessionManager {
     session: Session,
     subscription: ProviderConfig,
     usage: import("../guardrails/usage-tracker.ts").UsageTracker,
-    completion: CompletionConfig,
+    approvalMode: ApprovalMode,
     promptOverride?: string | undefined,
   ): Promise<SessionRuntime> {
     const sessionId = session.id;
+    // steeringQueue and guardrails are created BEFORE the runtime: the
+    // guardrails object is stored ON the runtime, so switchApprovalMode can
+    // mutate `runtime.guardrails.approvalMode` and the next tool call sees
+    // the new posture without a relaunch.
+    const steeringQueue: AgentMessage[] = [];
+    const guardrails: import("../guardrails/types.ts").GuardrailConfig = {
+      sessionId,
+      workspace: session.workspace,
+      undoRoot: join(this.opts.forgeHome, "undo", sessionId),
+      session,
+      approvalMode,
+      approval: this.opts.approvalHub,
+      steeringQueue,
+      usage,
+    };
     const runtime: SessionRuntime = {
       runPromise: Promise.resolve(session),
       controller: new AbortController(),
-      steeringQueue: [],
+      steeringQueue,
+      guardrails,
       usage,
-      completion,
       pendingModel: null,
       pendingThinking: null,
+      stopRequested: false,
     };
     // Register before the loop starts so steer/abort/switch* calls that race
     // with the first turn find the runtime. settle()/the catch handler remove
@@ -436,16 +404,7 @@ export class SessionManager {
       session,
       model: buildModel(subscription),
       streamFn: makeStreamFnWithKey(subscription.apiKey, providerEnv(subscription)),
-      guardrails: {
-        sessionId,
-        workspace: session.workspace,
-        undoRoot: join(this.opts.forgeHome, "undo", sessionId),
-        session,
-        completion,
-        approval: this.opts.approvalHub,
-        steeringQueue: runtime.steeringQueue,
-        usage,
-      },
+      guardrails,
       signal: runtime.controller.signal,
       promptOverride,
       takeModelSwitch: () => {
@@ -462,17 +421,18 @@ export class SessionManager {
         return pending;
       },
     })
-      .then((final) => {
-        this.settle(sessionId, final);
+      .then(async (final) => {
+        await this.settle(sessionId, final);
         return final;
       })
       .catch(async (err) => {
-        session.status = "failed";
-        session.failureReason = err instanceof Error ? err.message : String(err);
+        const stopped = runtime.stopRequested;
+        session.status = stopped ? "cancelled" : "failed";
+        session.failureReason = stopped ? null : err instanceof Error ? err.message : String(err);
         session.updatedAt = Date.now();
         await saveSession(session);
-        await appendEvent(sessionId, "SESSION_FAILED", {
-          reason: session.failureReason,
+        await appendEvent(sessionId, stopped ? "SESSION_CANCELLED" : "SESSION_FAILED", {
+          ...(stopped ? { reason: "stopped by user" } : { reason: session.failureReason }),
         }).catch(() => {});
         this.runtimes.delete(sessionId);
         throw err;
@@ -498,6 +458,7 @@ export class SessionManager {
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return { ok: false, message: "session is not running" };
+    runtime.stopRequested = true;
     runtime.controller.abort();
     return { ok: true, message: "aborting" };
   }
@@ -531,20 +492,23 @@ export class SessionManager {
     return { ok: this.opts.approvalHub.mark(requestId, "denied") };
   }
 
-  private settle(sessionId: string, final: Session): void {
+  private async settle(sessionId: string, final: Session): Promise<void> {
     // The runtime dies with the run: one removal drops the controller,
     // steering queue, cost guard, live completion config and any pending
     // switch that never got consumed at a turn boundary. (The old shape kept
     // settled entries in an `idle` map that nothing ever read — a leak; gone.)
     const runtime = this.runtimes.get(sessionId);
     this.runtimes.delete(sessionId);
-    const status: SessionStatus = final.failureReason ? "failed" : "completed";
+    const status: SessionStatus = runtime?.stopRequested
+      ? "cancelled"
+      : final.failureReason ? "failed" : "completed";
     final.status = status;
+    if (status === "cancelled") final.failureReason = null;
     if (runtime) final.usage = runtime.usage.snapshot();
     final.updatedAt = Date.now();
-    void saveSession(final);
-    void appendEvent(sessionId, status === "failed" ? "SESSION_FAILED" : "SESSION_ENDED", {
+    await saveSession(final);
+    await appendEvent(sessionId, status === "failed" ? "SESSION_FAILED" : status === "cancelled" ? "SESSION_CANCELLED" : "SESSION_ENDED", {
       status,
-    }).catch(() => {});
+    });
   }
 }

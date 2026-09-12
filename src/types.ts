@@ -1,9 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { SuccessCriterion } from "./core/types/criterion.ts";
-import type { EvaluationResult } from "./core/types/evaluation.ts";
 
 export type SessionStatus = "running" | "completed" | "failed" | "cancelled";
-export type TrustLevel = "low" | "medium" | "high";
 
 /**
  * Approval posture for mutating tool calls (bash / git / network).
@@ -39,14 +36,11 @@ export interface Session {
   /** Cumulative token usage + context watermark (persisted; hydrates UsageTracker on resume). */
   usage: SessionUsage;
   approvalMode: ApprovalMode;
-  trustLevel: TrustLevel;
   /**
    * Reasoning effort sent with every provider request. Persisted since
    * schema v6 and switchable mid-session (POST /sessions/:id/thinking).
    */
   thinkingLevel: ThinkingLevel;
-  completionCriteria: SuccessCriterion[];
-  lastEvaluation: EvaluationResult | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,9 +55,3 @@ export interface SessionUsage {
   lastContextTokens: number | null;
 }
 
-export interface CompletionConfig {
-  trustLevel: TrustLevel;
-  criteria: SuccessCriterion[];
-  /** Approval posture; absent = "default". Rides the live run-config carrier. */
-  approvalMode?: ApprovalMode;
-}

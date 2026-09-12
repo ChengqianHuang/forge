@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProviderConfig, ThinkingLevel, TrustLevel } from "../types.ts";
-import { TRUST_LEVELS, trustLabel } from "../lib/verification.ts";
+import type { ProviderConfig, ThinkingLevel } from "../types.ts";
 import { thinkingLabel, thinkingMeta } from "../lib/thinking.ts";
 import { APPROVAL_MODES, approvalLabel } from "../lib/approval.ts";
 import type { ApprovalMode } from "../types.ts";
@@ -48,20 +47,16 @@ function hostOf(baseUrl: string): string {
 }
 
 /**
- * Model subscription + completion-verification picker, in one popover.
+ * Model subscription + reasoning-effort picker, in one popover.
  *
- * These belong together: both answer "how should this session run", both are
- * switched from the same place, and both apply from the next turn boundary.
- * The raw word `trust` never reaches the user — see lib/verification.ts for
- * what the levels actually do.
+ * Both answer "how should this session run" and apply from the next turn
+ * boundary.
  */
 export function ModelPicker({
   providers,
   activeProviderId,
   activeModelLabel,
   onSelectModel,
-  trustLevel,
-  onSelectTrust,
   thinkingLevel,
   thinkingLevels,
   onSelectThinking,
@@ -78,8 +73,6 @@ export function ModelPicker({
    * truth instead of falling back to "未选择模型". */
   activeModelLabel?: string | undefined;
   onSelectModel: (providerId: string) => void;
-  trustLevel: TrustLevel;
-  onSelectTrust: (level: TrustLevel) => void;
   thinkingLevel: ThinkingLevel;
   /** Levels the current model actually supports, from the server's per-model
    * `modelCapabilities`. A model with no reasoning support yields ["off"]. */
@@ -127,11 +120,9 @@ export function ModelPicker({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="运行方式：模型订阅与完成验证"
+        title="运行方式：模型订阅 / 思考强度 / 审批"
       >
         <span className="picker-model">{modelLabel}</span>
-        <span className="picker-dot" aria-hidden="true" />
-        <span className="picker-trust">{trustLabel(trustLevel)}</span>
         {reasoningSupported && (
           <>
             <span className="picker-dot" aria-hidden="true" />
@@ -177,33 +168,6 @@ export function ModelPicker({
           </div>
 
           <div className="picker-rule" />
-
-          <div className="picker-group">
-            <div className="picker-group-label">完成验证</div>
-            {TRUST_LEVELS.map((level) => {
-              const on = level.value === trustLevel;
-              return (
-                <button
-                  key={level.value}
-                  type="button"
-                  className="picker-option"
-                  data-active={on || undefined}
-                  role="option"
-                  aria-selected={on}
-                  onClick={() => {
-                    if (!on) onSelectTrust(level.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="picker-mark">{on && <CheckIcon />}</span>
-                  <span className="picker-option-body">
-                    <span className="picker-option-label">{level.label}</span>
-                    <span className="picker-option-hint">{level.hint}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
 
           <div className="picker-rule" />
 

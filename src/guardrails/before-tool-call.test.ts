@@ -37,10 +37,7 @@ function stubSession(workspace: string): Session {
     failureReason: null,
     usage: { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null },
     approvalMode: "default",
-    trustLevel: "medium",
     thinkingLevel: "off",
-    completionCriteria: [],
-    lastEvaluation: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -52,7 +49,6 @@ function config(undoRoot: string): GuardrailConfig {
     workspace: WS,
     undoRoot,
     session: stubSession(WS),
-    completion: { trustLevel: "medium", criteria: []},
     approval: { request: async () => true },
     steeringQueue: [],
     usage: new UsageTracker(),
@@ -130,7 +126,7 @@ describe("beforeToolCall → approval mode", () => {
     const base = config(join(TMP, "mode-always"));
     const cfg: GuardrailConfig = {
       ...base,
-      completion: { ...base.completion, approvalMode: "always" },
+      approvalMode: "always",
       approval: relay,
     };
     const hook = makeBeforeToolCall(cfg);
@@ -162,7 +158,7 @@ describe("beforeToolCall → approval mode", () => {
     const base = config(join(TMP, "mode-ask"));
     const cfg: GuardrailConfig = {
       ...base,
-      completion: { ...base.completion, approvalMode: "ask" },
+      approvalMode: "ask",
       approval: relay,
     };
     const hook = makeBeforeToolCall(cfg);

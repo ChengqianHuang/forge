@@ -70,9 +70,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
           goal: typeof body.goal === "string" ? body.goal : "",
           ...(typeof body.projectId === "string" ? { projectId: body.projectId } : {}),
           ...(typeof body.providerId === "string" ? { providerId: body.providerId } : {}),
-          ...(body.trustLevel ? { trustLevel: body.trustLevel } : {}),
           ...(body.thinkingLevel ? { thinkingLevel: body.thinkingLevel } : {}),
-          ...(Array.isArray(body.criteria) ? { criteria: body.criteria } : {}),
           ...(body.approvalMode === "ask" || body.approvalMode === "default" || body.approvalMode === "always"
             ? { approvalMode: body.approvalMode }
             : {}),
@@ -131,25 +129,6 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         }
         try {
           const result = await manager.switchModel(parts[1]!, body.providerId);
-          json(res, 200, result);
-        } catch (err) {
-          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      // Mid-session completion-verification switch. Running: the guardrail
-      // reads the new level at the next turn boundary; idle: persisted for the
-      // next resume.
-      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "trust") {
-        const body = await readBody(req);
-        const level = body.trustLevel;
-        if (level !== "low" && level !== "medium" && level !== "high") {
-          json(res, 400, { error: 'trustLevel must be "low", "medium" or "high"' });
-          return;
-        }
-        try {
-          const result = await manager.switchTrust(parts[1]!, level);
           json(res, 200, result);
         } catch (err) {
           json(res, 409, { error: err instanceof Error ? err.message : String(err) });

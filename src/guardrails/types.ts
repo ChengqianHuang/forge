@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ApprovalMode, CompletionConfig, Session } from "../types.ts";
+import type { ApprovalMode, Session } from "../types.ts";
 import type { UsageTracker } from "./usage-tracker.ts";
 
 /**
@@ -39,9 +39,14 @@ export interface GuardrailConfig {
    * in one process, so a global cannot carry a per-session value.
    */
   undoRoot: string;
-  /** Live session reference: the stop gate writes failureReason/lastEvaluation. */
+  /** Live session reference: guardrails write an honest failureReason. */
   session: Session;
-  completion: CompletionConfig;
+  /**
+   * Approval posture (live). session-manager keeps a reference to this very
+   * object on the runtime, so switchApprovalMode mutates it here and the
+   * next tool call sees the new mode. Absent = "default".
+   */
+  approvalMode?: ApprovalMode;
   approval: ApprovalRelay;
   steeringQueue: AgentMessage[];
   usage: UsageTracker;

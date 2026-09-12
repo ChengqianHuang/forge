@@ -28,10 +28,6 @@ export type PersistedEventType =
   | "AGENT_RUN_ENDED"
   // mid-session model switch (POST /sessions/:id/model)
   | "MODEL_CHANGED"
-  // mid-session completion-verification switch (POST /sessions/:id/trust).
-  // Same plane as MODEL_CHANGED: an operator action, not a loop signal — the
-  // UI reads it from the log over SSE, so it stays out of the control bus.
-  | "TRUST_CHANGED"
   // mid-session thinking-level switch (POST /sessions/:id/thinking).
   // Same plane as MODEL_CHANGED: an operator action the UI reads from the log.
   | "THINKING_CHANGED"
@@ -46,7 +42,6 @@ export type PersistedEventType =
   | "TOOL_RESULT"
   // guardrails (Phase 3+; reserved so event types cover everything the UI renders)
   | "STEERING_QUEUED"
-  | "VERIFICATION_RESULT"
   // Mid-session approval-posture switch (POST /sessions/:id/approval)
   | "APPROVAL_MODE_CHANGED"
   // Per-session token usage (2026-09-11, replaces COST_UPDATE for new logs;
@@ -61,9 +56,6 @@ export type PersistedEventType =
   //   GUARD_APPROVAL_REQUEST   → { requestId: string, toolName: string }
   | "GUARD_BLOCKED"
   | "GUARD_APPROVAL_REQUEST"
-  // Phase 3: trust-level-high evaluator round. Payload shape:
-  //   EVALUATION_COMPLETED     → EvaluationResult ({ sessionId, score, status, findings, evidence })
-  | "EVALUATION_COMPLETED"
   // Phase 5: compaction
   | "COMPACTION"
   | "COMPACTION_FAILED";

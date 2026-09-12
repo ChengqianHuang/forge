@@ -2,29 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
 import { ModelPicker } from "./ModelPicker.tsx";
-import type { ApprovalMode, ThinkingLevel, TrustLevel } from "../types.ts";
+import type { ApprovalMode, ThinkingLevel } from "../types.ts";
 
-/** Parse the compact criteria syntax: "file_exists:hello.txt" or
- * "file_contains:hello.txt:export" (kind:path[:pattern]). Empty → none. */
-function parseCriteria(input: string): Array<{ kind: string; [k: string]: unknown }> {
-  const line = input.trim();
-  if (!line) return [];
-  const parts = line.split(":").map((s) => s.trim());
-  if (parts[0] === "file_exists" && parts[1]) return [{ kind: "file_exists", path: parts[1] }];
-  if (parts[0] === "file_contains" && parts[1] && parts[2])
-    return [{ kind: "file_contains", path: parts[1], pattern: parts[2] }];
-  if (parts[0] === "command_exit_zero" && parts[1]) return [{ kind: "command_exit_zero", command: parts[1] }];
-  return [];
-}
 
 export function Composer({ projectId }: { projectId?: string | null }) {
   const createSession = store((s) => s.createSession);
   const loading = store((s) => s.loading);
   const error = store((s) => s.error);
   const [goal, setGoal] = useState("");
-  const [trust, setTrust] = useState<TrustLevel>("medium");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
-  const [criteriaLine, setCriteriaLine] = useState("");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("default");
   // Turn budget: after the cost budget was retired this is the only "runaway"
   // bound, and it used to have no UI entry at all (AGENTS.md Rule 9.2: a
@@ -58,13 +44,10 @@ export function Composer({ projectId }: { projectId?: string | null }) {
       goal: goal.trim(),
       ...(projectId ? { projectId } : {}),
       ...(providerId ? { providerId } : {}),
-      trustLevel: trust,
       thinkingLevel: thinking,
       approvalMode,
-      ...(trust === "high" ? { criteria: parseCriteria(criteriaLine) } : {}),
     });
     setGoal("");
-    setCriteriaLine("");
   };
 
   return (
@@ -93,8 +76,6 @@ export function Composer({ projectId }: { projectId?: string | null }) {
                 providers={providers}
                 activeProviderId={providerId}
                 onSelectModel={setProviderId}
-                trustLevel={trust}
-                onSelectTrust={setTrust}
                 thinkingLevel={thinking}
                 thinkingLevels={thinkingLevels}
                 onSelectThinking={setThinking}
@@ -102,14 +83,6 @@ export function Composer({ projectId }: { projectId?: string | null }) {
                 onSelectApprovalMode={setApprovalMode}
                 placement="above"
               />
-              {trust === "high" && (
-                <input
-                  className="criteria-input"
-                  placeholder="验收标准，如 file_exists:hello.txt"
-                  value={criteriaLine}
-                  onChange={(e) => setCriteriaLine(e.target.value)}
-                />
-              )}
             </div>
             <button className="btn btn-primary btn-small" onClick={submit} disabled={!goal.trim() || loading}>
               {loading ? "Starting…" : "Start"}

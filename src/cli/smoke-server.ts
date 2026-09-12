@@ -105,7 +105,7 @@ async function main(): Promise<void> {
       await fetch(`${base}/sessions`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ goal: "smoke session", trustLevel: "low" }),
+        body: JSON.stringify({ goal: "smoke session" }),
       })
     ).json()) as { sessionId: string };
     const sessionId = created.sessionId as string;

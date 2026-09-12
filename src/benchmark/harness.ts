@@ -17,17 +17,14 @@ import { appendEvent } from "../core/persistence/event-log.ts";
 import { UsageTracker } from "../guardrails/usage-tracker.ts";
 import type { GuardrailConfig } from "../guardrails/types.ts";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Session, TrustLevel } from "../types.ts";
-import type { SuccessCriterion } from "../core/types/criterion.ts";
+import type { Session } from "../types.ts";
 import { fakeModel, makeScriptedRuntime, type Script, type ScriptedRuntime } from "./scripted-runtime.ts";
 import { extractMetrics, type RunMetrics } from "./metrics.ts";
 
 export interface GoldenTask {
   name: string;
-  category: "new-feature" | "recovery" | "verification";
+  category: "new-feature" | "recovery" | "guardrail";
   goal: string;
-  trustLevel: TrustLevel;
-  criteria: SuccessCriterion[];
   /** Script factory — tools need the real (temp) workspace for absolute paths. */
   script: (workspace: string) => Script;
   /** Assertions run against the finished run. Throw-free: return pass/fail list. */
@@ -79,10 +76,7 @@ export async function runGoldenTask(task: GoldenTask): Promise<TaskReport> {
       failureReason: null,
       usage: { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null },
       approvalMode: "default",
-      trustLevel: task.trustLevel,
       thinkingLevel: "off",
-      completionCriteria: task.criteria,
-      lastEvaluation: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -96,11 +90,6 @@ export async function runGoldenTask(task: GoldenTask): Promise<TaskReport> {
       workspace,
       undoRoot: join(forgeHome, "undo", sessionId),
       session,
-      completion: {
-        trustLevel: task.trustLevel,
-        criteria: task.criteria,
-        
-      },
       approval: { request: async () => true },
       steeringQueue,
       usage: new UsageTracker(),

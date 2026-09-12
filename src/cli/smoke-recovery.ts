@@ -105,10 +105,7 @@ async function main(): Promise<void> {
       failureReason: "simulated failure",
       usage: { tokensIn: 123, tokensOut: 0, cacheRead: 0, cacheWrite: 0, lastContextTokens: null }, // ← tokens to test hydrate
       approvalMode: "default",
-      trustLevel: "low",
       thinkingLevel: "off",
-      completionCriteria: [],
-      lastEvaluation: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

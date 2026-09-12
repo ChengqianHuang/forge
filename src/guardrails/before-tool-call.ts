@@ -86,7 +86,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     // Deny decisions are NEVER relaxed: the destructive floor holds in every
     // mode, and explicit user allow-rules in guard.json still win (mode only
     // affects the built-in ask decisions).
-    const approvalMode = config.completion.approvalMode ?? "default";
+    const approvalMode = config.approvalMode ?? "default";
     let action = decision.action;
     if (action === "ask" && approvalMode === "always") {
       action = "allow";

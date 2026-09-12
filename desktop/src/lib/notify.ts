@@ -2,7 +2,7 @@
  * Task-outcome notification.
  *
  * Scope: a finished session is already reported in place — timeline notices,
- * the verification panel, and the sidebar status dot all update on their own.
+ * the timeline and sidebar status dot update on their own.
  * So there is deliberately no in-app toast host here; a floating toast would
  * only restate what is on screen. This module covers the one case the
  * conversation view cannot: the window is hidden and the user would otherwise

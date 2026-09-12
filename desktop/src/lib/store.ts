@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { getCfg } from "./api.ts";
 import { notifyTaskOutcome, outcomeFromTerminal } from "./notify.ts";
-import { trustLabel } from "./verification.ts";
 import { thinkingLabel } from "./thinking.ts";
 import type {
   ApprovalRecordView,
@@ -10,8 +9,6 @@ import type {
   ProjectRecord,
   Session,
   ThinkingLevel,
-  TrustLevel,
-  VerificationView,
   ApprovalMode,
 } from "../types.ts";
 
@@ -41,10 +38,8 @@ export interface DesktopState {
     goal: string;
     projectId?: string;
     providerId?: string;
-    trustLevel: TrustLevel;
     thinkingLevel?: ThinkingLevel;
     approvalMode?: ApprovalMode;
-    criteria?: Array<{ kind: string; [k: string]: unknown }>;
   }) => Promise<void>;
   steer: (message: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -59,12 +54,10 @@ export interface DesktopState {
 
 const emptyConversation = (): ConversationView => ({
   timeline: [],
-  verification: [],
   usage: { tokensIn: 0, tokensOut: 0, contextTokens: null },
   providerId: null,
   approvalMode: null,
   modelId: null,
-  trustLevel: null,
   thinkingLevel: null,
 });
 
@@ -135,13 +128,8 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
   const stamp = env.seq ?? env.timestamp ?? env.at ?? Date.now();
 
   switch (env.type) {
-    // A new run (fresh start or resume) gets a clean verification slate, so the
-    // panel reads as "the verdicts for this run" instead of accumulating
-    // round-1 rows from every earlier attempt.
-    case "AGENT_RUN_STARTED": {
-      conversation.verification = [];
-      return { conversation };
-    }
+    case "AGENT_RUN_STARTED":
+      return {};
 
     case "MESSAGE_STARTED": {
       const { role, text, stamp: key } = readMessage(payload.message);
@@ -285,16 +273,6 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return { conversation };
     }
 
-    case "VERIFICATION_RESULT": {
-      const entry: VerificationView = {
-        round: Number(payload.round ?? conversation.verification.length + 1),
-        passed: payload.passed === true,
-        reason: typeof payload.reason === "string" ? payload.reason : null,
-      };
-      conversation.verification = [...conversation.verification, entry];
-      return { conversation };
-    }
-
     case "COST_UPDATE":
       // Historical logs only — the dollar layer was removed 2026-09-11.
       return {};
@@ -360,19 +338,6 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
                 : "审批改为「默认」—— 白名单内的安全命令直接放行。",
         });
       }
-      return { conversation };
-    }
-
-    case "TRUST_CHANGED": {
-      const level = String(payload.trustLevel ?? "");
-      conversation.trustLevel = level as ConversationView["trustLevel"];
-      conversation.timeline = upsert(conversation.timeline, {
-        kind: "notice",
-        id: `trust-${stamp}`,
-        tone: "info",
-        icon: "✓",
-        text: `完成验证改为「${trustLabel(level)}」—— 从下一轮开始生效。`,
-      });
       return { conversation };
     }
 
@@ -456,7 +421,7 @@ async function pollApprovals(): Promise<void> {
 /**
  * System-notify a session that just reached a terminal state — but only while
  * the window is hidden. With the window visible the outcome is already on
- * screen (timeline notice, verification panel, sidebar status), so a
+ * screen (timeline notice and sidebar status), so a
  * notification would be pure noise.
  */
 function maybeNotifyOutcome(env: EventEnvelope): void {

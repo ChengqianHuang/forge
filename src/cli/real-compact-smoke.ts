@@ -36,7 +36,6 @@ async function main(): Promise<void> {
         "'The quick brown fox jumps over the lazy dog while counting numbers.' " +
         "repeated 60 times, one sentence per line. Then stop.",
       projectId: project.id,
-      trustLevel: "low",
     });
 
     // Wait for settle.
