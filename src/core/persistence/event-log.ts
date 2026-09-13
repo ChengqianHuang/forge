@@ -17,6 +17,8 @@ export type PersistedEventType =
   | "SESSION_CREATED"
   | "SESSION_STARTED"
   | "SESSION_RESUMED"
+  | "SESSION_INTERRUPTED"
+  | "SESSION_STOP_REQUESTED"
   // One-shot legacy transcript replacement. Data plane: payload may contain
   // the complete historical message array and must not flood the EventBus.
   | "SESSION_HISTORY_IMPORTED"

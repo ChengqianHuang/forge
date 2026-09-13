@@ -13,6 +13,7 @@ import type { GuardrailConfig } from "./types.ts";
  */
 export function makeAfterToolCall(config: GuardrailConfig) {
   const stuckDetector = new StuckDetector();
+  const emit = config.emitEvent ?? ((type, payload) => appendEvent(config.sessionId, type, payload));
 
   return async (
     ctx: AfterToolCallContext,
@@ -27,7 +28,7 @@ export function makeAfterToolCall(config: GuardrailConfig) {
 
     const stuck = stuckDetector.check();
     if (stuck.isStuck) {
-      await appendEvent(config.sessionId, "STUCK_WARNING", {
+      await emit("STUCK_WARNING", {
         pattern: stuck.pattern,
         repetitions: stuck.repetitions,
       }).catch(() => {});

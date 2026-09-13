@@ -106,6 +106,8 @@ MCP child processes inherit ordinary launch variables but not ambient values
 whose names indicate credentials, tokens, passwords, secrets or keys. A server
 may still receive a credential explicitly configured for that server. Disposal
 sends a graceful termination signal, waits for exit and escalates if needed.
+Both waits are bounded; after the final deadline Forge detaches the stdio
+handles so a broken child lifecycle cannot pin server shutdown.
 
 Settings changes to MCP server definitions currently take effect after Forge
 restarts. Hot replacement is not implemented.

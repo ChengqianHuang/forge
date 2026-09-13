@@ -1,7 +1,8 @@
 /**
  * Real-model benchmark: run N small engineering tasks through the FULL stack
  * (SessionManager → real provider → real tools on temp workspaces) and
- * report success rate, turns, wall time and token spend.
+ * report task outcomes and harness integrity separately, alongside turns,
+ * wall time and token usage.
  *
  * Manual, NOT in release-check — requires network + a subscription in
  * ~/.forge/forge-config.json. This is the dashboard for "real-task success
@@ -21,6 +22,7 @@ import { ProjectsRegistry } from "../server/projects.ts";
 import { SessionManager } from "../server/session-manager.ts";
 import { readEvents } from "../core/persistence/event-log.ts";
 import { loadSession } from "../core/persistence/session-store.ts";
+import { extractReliabilityMetrics, formatReliabilityLine, type ReliabilityMetrics } from "../reliability/metrics.ts";
 
 const HOME_CONFIG = process.env.HOME + "/.forge/forge-config.json";
 const SETTLE_TIMEOUT_MS = 5 * 60_000;
@@ -89,6 +91,7 @@ type TaskResult = {
   turns: number;
   toolCalls: number;
   checks: Array<{ name: string; pass: boolean; detail: string }>;
+  reliability: ReliabilityMetrics;
 };
 
 async function runTask(manager: SessionManager, projects: ProjectsRegistry, task: RealTask): Promise<TaskResult> {
@@ -120,6 +123,10 @@ async function runTask(manager: SessionManager, projects: ProjectsRegistry, task
     const events = await readEvents(sessionId);
     const toolCalls = events.filter((e) => e.type === "TOOL_CALL").length;
     const turns = events.filter((e) => e.type === "MESSAGE_ENDED").length;
+    const reliability = extractReliabilityMetrics({
+      events,
+      ...(session ? { sessionStatus: session.status } : {}),
+    });
 
     checks.push({
       name: "status=completed",
@@ -139,6 +146,7 @@ async function runTask(manager: SessionManager, projects: ProjectsRegistry, task
 
     const passed = checks.every((c) => c.pass);
     console.log(`  ${passed ? "PASS" : "FAIL"} (${(wallMs / 1000).toFixed(1)}s, ${turns} turns, ${toolCalls} tool calls, in=${session?.usage.tokensIn ?? 0} out=${session?.usage.tokensOut ?? 0})`);
+    console.log(`  harness: ${formatReliabilityLine(reliability)}`);
     for (const c of checks) {
       if (!c.pass) console.log(`    ✗ ${c.name}: ${c.detail}`);
     }
@@ -153,6 +161,7 @@ async function runTask(manager: SessionManager, projects: ProjectsRegistry, task
       turns,
       toolCalls,
       checks,
+      reliability,
     };
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -186,6 +195,7 @@ async function main(): Promise<void> {
       total: results.length,
       passed,
       successRate: results.length > 0 ? Math.round((passed / results.length) * 100) / 100 : 0,
+      harnessHealthy: results.filter((result) => result.reliability.integrity.healthy).length,
       totalTokensIn: results.reduce((a, r) => a + r.tokensIn, 0),
       totalTokensOut: results.reduce((a, r) => a + r.tokensOut, 0),
       totalWallMs: results.reduce((a, r) => a + r.wallMs, 0),
@@ -193,6 +203,7 @@ async function main(): Promise<void> {
     };
     console.log(`\n==== Real-bench summary ====`);
     console.log(`success rate: ${passed}/${results.length} (${summary.successRate})`);
+    console.log(`harness integrity: ${summary.harnessHealthy}/${results.length}`);
     console.log(`tokens: in=${summary.totalTokensIn} out=${summary.totalTokensOut}`);
     console.log(`wall: ${(summary.totalWallMs / 1000).toFixed(1)}s total`);
 

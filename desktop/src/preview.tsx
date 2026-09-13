@@ -6,7 +6,7 @@
  * plain browser without the Tauri sidecar.
  * Open /preview.html?scene=<name>&theme=<dark|light>
  *
- * Scenes: session | thinking | landing | empty | settings | replay | notify | picker
+ * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | reliability
  *
  * `replay` folds captured real session frames through the real reducer;
  * `notify` additionally patches document.hidden and window.Notification and
@@ -22,6 +22,7 @@ import { SessionView } from "./components/SessionView.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { ModelPicker } from "./components/ModelPicker.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
+import { ReliabilityDialog } from "./components/ReliabilityDialog.tsx";
 import { REPLAY } from "./__replay.ts";
 import type { EventEnvelope, TimelineEntry } from "./types.ts";
 import "./styles.css";
@@ -414,6 +415,24 @@ createRoot(document.getElementById("root")!).render(
           defaultOpen
         />
       </div>
+    )}
+    {scene === "reliability" && (
+      <ReliabilityDialog
+        loading={false}
+        error={null}
+        onClose={() => {}}
+        metrics={{
+          eventCount: 184,
+          wallMs: 48_200,
+          runs: { started: 2, endedByPi: 1, terminal: 2 },
+          tools: { calls: 12, results: 12, errors: 1, guarded: 12, guardCoverage: 1, unfinished: 0, orphanResults: 0 },
+          approvals: { requested: 2, resolved: 2, pending: 0, p95LatencyMs: 1840 },
+          cancellation: { requested: 1, settled: 1, p95LatencyMs: 34 },
+          recovery: { interrupted: 1, resumed: 1, messagesRecovered: 8 },
+          plugins: { failures: 1 },
+          integrity: { healthy: true, violations: [] },
+        }}
+      />
     )}
   </>,
 );

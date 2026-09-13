@@ -189,11 +189,11 @@ If those answers are unclear, the feature is not ready to enter the kernel.
 The next phase should deepen the platform through real Forge capabilities,
 not expand the abstraction surface in advance. Registry lifecycle and
 session-scoped capability status and guard-decision inspection are now
-established; the remaining direction is:
-
-1. Strengthen cancellation, process cleanup and crash-resume behavior.
-2. Add measurements and regression benchmarks for harness reliability, while
-   leaving model-quality judgment to real task evaluation.
+established. Cancellation, bounded cleanup, honest restart repair and
+event-derived harness reliability metrics are now part of the recovery
+baseline. Further work should add real Forge capabilities driven by desktop
+needs, using these measurements to protect the kernel without grading model
+intelligence.
 
 This section states direction, not shipped behavior. Current implementation
 details belong in the architecture and internal-plugin documents.

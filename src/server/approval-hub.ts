@@ -60,6 +60,18 @@ export class ApprovalHub {
     return true;
   }
 
+  /** Expire every unresolved approval owned by a session. Cancellation and
+   * shutdown call this so no waiter or dialog survives the run it guarded. */
+  cancelSession(sessionId: string): void {
+    const ids = this.bySession.get(sessionId);
+    if (!ids) return;
+    for (const id of ids) {
+      const record = this.records.get(id);
+      if (record?.status === "pending") this.mark(id, "expired");
+    }
+    this.bySession.delete(sessionId);
+  }
+
   /**
    * Blocking approval request used by the guardrail hook. Registers a pending
    * record and resolves when mark() lands (approved/denied), on timeout

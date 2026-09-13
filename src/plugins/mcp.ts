@@ -19,6 +19,14 @@ export interface McpClient {
 
 const SECRET_ENV_NAME = /(key|secret|token|password|credential)/i;
 
+function terminateGraceMs(): number {
+  return Number(process.env.FORGE_MCP_TERMINATE_GRACE_MS ?? 2_000);
+}
+
+function killGraceMs(): number {
+  return Number(process.env.FORGE_MCP_KILL_GRACE_MS ?? 1_000);
+}
+
 /**
  * MCP processes inherit ordinary launch context but not ambient credentials.
  * A value explicitly supplied in the server's own config is intentional and
@@ -110,13 +118,25 @@ export class McpStdioClient implements McpClient {
     const exited = await Promise.race([
       done.then(() => true),
       new Promise<false>((resolve) => {
-        const timer = setTimeout(() => resolve(false), 2_000);
+        const timer = setTimeout(() => resolve(false), terminateGraceMs());
         timer.unref?.();
       }),
     ]);
     if (!exited && child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
-      await done;
+      const killed = await Promise.race([
+        done.then(() => true),
+        new Promise<false>((resolve) => {
+          const timer = setTimeout(() => resolve(false), killGraceMs());
+          timer.unref?.();
+        }),
+      ]);
+      if (!killed) {
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+        child.unref();
+      }
     }
   }
 

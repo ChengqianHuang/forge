@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ApprovalMode, Session } from "../types.ts";
 import type { UsageTracker } from "./usage-tracker.ts";
+import type { PersistedEventType } from "../core/persistence/event-log.ts";
 
 /**
  * Minimal approval surface used by guardrail hooks. The concrete hub lives
@@ -50,4 +51,10 @@ export interface GuardrailConfig {
   approval: ApprovalRelay;
   steeringQueue: AgentMessage[];
   usage: UsageTracker;
+  /** Runtime-scoped event sink. SessionManager closes it at finalization so
+   * a provider that resolves after cancellation cannot append late frames. */
+  emitEvent?: (
+    type: PersistedEventType,
+    payload: Record<string, unknown>,
+  ) => Promise<unknown>;
 }

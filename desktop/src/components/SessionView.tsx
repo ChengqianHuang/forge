@@ -3,10 +3,12 @@ import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
+import { ReliabilityDialog } from "./ReliabilityDialog.tsx";
 import type {
   ApprovalMode,
   GuardDecisionView,
   PluginCapabilitySnapshot,
+  ReliabilityMetrics,
   ThinkingLevel,
   TimelineEntry,
 } from "../types.ts";
@@ -174,6 +176,10 @@ export function SessionView({
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [reliabilityOpen, setReliabilityOpen] = useState(false);
+  const [reliability, setReliability] = useState<ReliabilityMetrics | null>(null);
+  const [reliabilityLoading, setReliabilityLoading] = useState(false);
+  const [reliabilityError, setReliabilityError] = useState<string | null>(null);
   const [resumeMessage, setResumeMessage] = useState("");
   const [pluginCapabilities, setPluginCapabilities] = useState<PluginCapabilitySnapshot | null>(null);
   const { providers, capabilities, contextWindows } = useModelCatalog();
@@ -261,6 +267,20 @@ export function SessionView({
     }
   };
 
+  const openReliability = async () => {
+    setReliabilityOpen(true);
+    setReliabilityLoading(true);
+    setReliabilityError(null);
+    try {
+      const { fetchReliability } = await import("../lib/api.ts");
+      setReliability(await fetchReliability(sessionId));
+    } catch (err) {
+      setReliabilityError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReliabilityLoading(false);
+    }
+  };
+
   // Approval-posture switch: takes effect at the NEXT TOOL CALL (live), not
   // at a turn boundary — switching to 始终允许 should stop the popups now.
   const onApprovalSwitch = async (mode: ApprovalMode) => {
@@ -322,6 +342,13 @@ export function SessionView({
           <div className="head-actions">
             <button
               className="btn btn-ghost btn-small"
+              onClick={() => void openReliability()}
+              title="Inspect event-derived harness reliability"
+            >
+              诊断
+            </button>
+            <button
+              className="btn btn-ghost btn-small"
               onClick={() => setAuditOpen(true)}
               title="Inspect durable guard decisions"
             >
@@ -367,6 +394,15 @@ export function SessionView({
             </div>
           </div>
         </div>
+      )}
+
+      {reliabilityOpen && (
+        <ReliabilityDialog
+          metrics={reliability}
+          loading={reliabilityLoading}
+          error={reliabilityError}
+          onClose={() => setReliabilityOpen(false)}
+        />
       )}
 
       {resumeOpen && (

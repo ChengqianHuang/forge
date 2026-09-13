@@ -51,6 +51,7 @@ function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T 
  * 4. `ask` relays to the desktop approval dialog and blocks until decided
  */
 export function makeBeforeToolCall(config: GuardrailConfig) {
+  const emit = config.emitEvent ?? ((type, payload) => appendEvent(config.sessionId, type, payload));
   return async (
     ctx: BeforeToolCallContext,
     signal?: AbortSignal,
@@ -65,7 +66,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     // to block for the full 5-minute approval timeout with no observer on
     // the signal, and the model's retry re-armed it forever).
     if (signal?.aborted) {
-      await appendEvent(config.sessionId, "GUARD_DECISION", {
+      await emit("GUARD_DECISION", {
         decisionId: `${ctx.toolCall.id}:forge.core`,
         guardId: "forge.core",
         toolCallId: ctx.toolCall.id,
@@ -104,13 +105,13 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     };
 
     if (decision.action === "deny") {
-      await appendEvent(config.sessionId, "GUARD_DECISION", {
+      await emit("GUARD_DECISION", {
         ...evidence,
         effectiveAction: "deny",
         outcome: "denied",
         basis: "policy",
       }).catch(() => {});
-      await appendEvent(config.sessionId, "GUARD_BLOCKED", {
+      await emit("GUARD_BLOCKED", {
         toolCallId: ctx.toolCall.id,
         toolName,
         reason: decision.reason ?? "denied by policy",
@@ -154,7 +155,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     // 3. `ask` → approval dialog, blocking with a hard timeout.
     if (action === "ask") {
       const requestId = ctx.toolCall.id;
-      await appendEvent(config.sessionId, "GUARD_APPROVAL_REQUEST", {
+      await emit("GUARD_APPROVAL_REQUEST", {
         requestId,
         toolName,
       }).catch(() => {});
@@ -169,7 +170,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
         signal,
       );
       if (approved === ABORTED || signal?.aborted) {
-        await appendEvent(config.sessionId, "GUARD_DECISION", {
+        await emit("GUARD_DECISION", {
           ...evidence,
           effectiveAction: "ask",
           outcome: "aborted",
@@ -178,7 +179,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
         return { block: true, reason: "aborted by user", terminate: true };
       }
       if (!approved) {
-        await appendEvent(config.sessionId, "GUARD_DECISION", {
+        await emit("GUARD_DECISION", {
           ...evidence,
           effectiveAction: "ask",
           outcome: "rejected",
@@ -186,7 +187,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
         }).catch(() => {});
         return { block: true, reason: "rejected by user" };
       }
-      await appendEvent(config.sessionId, "GUARD_DECISION", {
+      await emit("GUARD_DECISION", {
         ...evidence,
         effectiveAction: "ask",
         outcome: "approved",
@@ -195,7 +196,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
       return undefined;
     }
 
-    await appendEvent(config.sessionId, "GUARD_DECISION", {
+    await emit("GUARD_DECISION", {
       ...evidence,
       effectiveAction: action,
       outcome: "allowed",

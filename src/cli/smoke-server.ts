@@ -190,12 +190,20 @@ async function main(): Promise<void> {
     console.log(`  sse frames: ${sseFrames}`);
     ok = ok && sseFrames >= 2;
 
-    // 6. Approvals endpoint (empty) + abort + delete.
+    // 6. Approvals endpoint (empty) + abort + reliability projection + delete.
     const approvals = (await (await fetch(`${base}/sessions/${sessionId}/approvals`, { headers: auth })).json()) as { approvals: unknown[] };
     await fetch(`${base}/sessions/${sessionId}/abort`, { method: "POST", headers: auth });
     await new Promise((r) => setTimeout(r, 300));
+    const reliabilityResponse = await fetch(`${base}/sessions/${sessionId}/reliability`, { headers: auth });
+    const reliability = await reliabilityResponse.json() as {
+      tools?: { guardCoverage?: number };
+      integrity?: { healthy?: boolean; violations?: unknown[] };
+    };
+    ok = ok && reliabilityResponse.status === 200;
+    ok = ok && typeof reliability.tools?.guardCoverage === "number";
+    ok = ok && typeof reliability.integrity?.healthy === "boolean";
     const deleted = await fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers: auth });
-    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, delete: ${deleted.status}`);
+    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability: ${reliability.integrity?.healthy}, delete: ${deleted.status}`);
     ok = ok && deleted.status === 200;
 
     // Cleanup: the session file must be gone.

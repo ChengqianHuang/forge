@@ -10,7 +10,8 @@ Read in this order:
 2. [Architecture](ARCHITECTURE.md) — ownership and runtime flow.
 3. [Guardrails](GUARDRAILS.md) — what Forge constrains and why.
 4. [Internal plugins](INTERNAL-PLUGINS.md) — how Forge-owned capabilities attach.
-5. [Development](DEVELOPMENT.md) — change discipline and verification.
+5. [Harness reliability](RELIABILITY.md) — event-derived kernel measurements.
+6. [Development](DEVELOPMENT.md) — change discipline and verification.
 
 The repository-wide rules in [`AGENTS.md`](../AGENTS.md) are authoritative when
 they conflict with prose here.

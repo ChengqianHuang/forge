@@ -327,6 +327,7 @@ Every guardrail must have a UI entry point.
 | Streaming | SessionView (real-time conversation) |
 | Context compaction | In-place notice on COMPACTION |
 | Session management | SessionList + StatusBar |
+| Harness reliability | Session header 诊断 button + event-derived diagnostics modal |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |
 | Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |
@@ -380,7 +381,7 @@ To see the UI without launching the app, use the dev-only harness
 
 ```
 cd desktop && npm run dev
-# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker>&theme=<dark|light>
+# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker|reliability>&theme=<dark|light>
 # add &hover=1 to reveal hover-only affordances (a screenshot cannot hover)
 ```
 
@@ -396,9 +397,12 @@ without a live run.
 notification path end to end. Notifications fire **only while the window is
 hidden**: with the window visible the outcome is already on screen (timeline
 notice and sidebar status), so a notification would be noise.
-The server emits exactly two terminal event types — `SESSION_FAILED`, and
-`SESSION_ENDED` for everything else including cancellation, which is why
-`payload.status` (not the event type) decides the outcome.
+The server emits exactly one terminal event per run: `SESSION_ENDED`,
+`SESSION_FAILED` or `SESSION_CANCELLED`. `payload.status` remains the
+authoritative outcome for notification projection. A stale persisted
+`running` record is repaired on startup with a non-terminal
+`SESSION_INTERRUPTED` marker followed by one `SESSION_FAILED`, making the
+existing Resume path available without inventing a second live runtime.
 
 ### Rule 9.3
 

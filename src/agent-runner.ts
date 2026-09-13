@@ -70,6 +70,12 @@ export async function runAgent(opts: {
   plugins?: PluginHost | undefined;
   /** One-shot operator compaction request. */
   takeCompactionRequest?: (() => boolean) | undefined;
+  /** Runtime-scoped durable event sink. Defaults to the global log for
+   * direct smoke-test callers; SessionManager supplies a closeable gate. */
+  emitEvent?: ((
+    type: Parameters<typeof appendEvent>[1],
+    payload: Record<string, unknown>,
+  ) => Promise<unknown>) | undefined;
 }): Promise<Session> {
   const {
     session,
@@ -84,6 +90,7 @@ export async function runAgent(opts: {
     onActivity,
     plugins,
     takeCompactionRequest,
+    emitEvent = (type, payload) => appendEvent(session.id, type, payload),
   } = opts;
 
   const coreTools = createCodingTools(session.workspace) ?? [];
@@ -125,7 +132,7 @@ export async function runAgent(opts: {
       prepareNextTurn: makePrepareNextTurn({
       sessionId: session.id,
       usage: guardrails.usage,
-      emitEvent: (type, payload) => appendEvent(session.id, type as Parameters<typeof appendEvent>[1], payload),
+      emitEvent: (type, payload) => emitEvent(type as Parameters<typeof appendEvent>[1], payload),
       takeModelSwitch,
       takeThinkingSwitch,
       takeCompactionRequest,
@@ -160,7 +167,7 @@ export async function runAgent(opts: {
   for await (const event of stream) {
     const mapped = mapAgentEventToPersisted(event);
     if (mapped) {
-      await appendEvent(session.id, mapped.type, mapped.payload);
+      await emitEvent(mapped.type, mapped.payload);
       onActivity?.();
     }
     await plugins?.onAgentEvent(event);

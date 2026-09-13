@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node --enable-source-maps --import tsx/esm src/cli/serve.ts",
     "bench": "node --enable-source-maps --import tsx/esm src/cli/benchmark.ts",
+    "reliability": "node --enable-source-maps --import tsx/esm src/cli/reliability.ts",
     "real-bench": "node --enable-source-maps --import tsx/esm src/cli/real-bench.ts"
   },
   "devDependencies": {

@@ -52,6 +52,8 @@ test("isControlEvent recognizes control-plane types", () => {
     "SESSION_CREATED",
     "SESSION_STARTED",
     "SESSION_RESUMED",
+    "SESSION_INTERRUPTED",
+    "SESSION_STOP_REQUESTED",
     "SESSION_ENDED",
     "SESSION_FAILED",
     "SESSION_CANCELLED",

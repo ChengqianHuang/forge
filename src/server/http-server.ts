@@ -56,6 +56,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     }));
   }
   const manager = new SessionManager({ forgeHome: opts.forgeHome, projects, approvalHub, plugins });
+  await manager.reconcileInterruptedSessions();
   const token = newToken();
 
   const server: Server = createServer(async (req: IncomingMessage, res) => {
@@ -149,6 +150,15 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
       if (req.method === "GET" && parts[0] === "sessions" && parts[2] === "capabilities" && parts.length === 3) {
         try {
           json(res, 200, await manager.pluginCapabilities(parts[1]!));
+        } catch (err) {
+          json(res, 404, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && parts[0] === "sessions" && parts[2] === "reliability" && parts.length === 3) {
+        try {
+          json(res, 200, await manager.reliability(parts[1]!));
         } catch (err) {
           json(res, 404, { error: err instanceof Error ? err.message : String(err) });
         }
@@ -378,7 +388,8 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     token,
     close: async () => {
       await manager.shutdown();
-      server.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolveP) => server.close(() => resolveP()));
     },
   };
 }

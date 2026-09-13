@@ -242,7 +242,7 @@ export class PluginHost {
         .map((tool) => ({
           ...tool,
           execute: async (...args: Parameters<typeof tool.execute>) => {
-            if (this.disabled.has(id)) throw new Error(`plugin ${id} is disabled for this session`);
+            if (this.disposed || this.disabled.has(id)) throw new Error(`plugin ${id} is disabled for this session`);
             return tool.execute(...args);
           },
         })),
@@ -288,6 +288,7 @@ export class PluginHost {
   }
 
   async onAgentEvent(event: AgentEvent): Promise<void> {
+    if (this.disposed) return;
     for (const [id, instance] of this.instances) {
       if (this.disabled.has(id) || !instance.onAgentEvent) continue;
       try {
@@ -299,6 +300,7 @@ export class PluginHost {
   }
 
   async execute(commandLine: string): Promise<SlashCommandResult> {
+    if (this.disposed) throw new Error("plugin host is disposed");
     const match = /^\/([a-z0-9_-]+)(?:\s+(.*))?$/i.exec(commandLine.trim());
     if (!match) throw new Error("command must start with /");
     const name = match[1]!.toLowerCase();

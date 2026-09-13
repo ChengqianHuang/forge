@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createMcpPlugin, mcpChildEnvironment, type McpClient } from "./mcp.ts";
+import { createMcpPlugin, McpStdioClient, mcpChildEnvironment, type McpClient } from "./mcp.ts";
 
 test("MCP child environment drops ambient secrets but keeps explicit server config", () => {
   assert.deepEqual(
@@ -26,4 +26,30 @@ test("MCP plugin discovers tools, preserves provenance and closes with the sessi
   assert.deepEqual(result.details, { server: "demo", tool: "lookup", result: { name: "lookup", args: {} } });
   await instance.dispose?.();
   assert.equal(closed, true);
+});
+
+test("MCP close escalates and remains bounded when SIGTERM is ignored", async () => {
+  const oldTerminate = process.env.FORGE_MCP_TERMINATE_GRACE_MS;
+  const oldKill = process.env.FORGE_MCP_KILL_GRACE_MS;
+  process.env.FORGE_MCP_TERMINATE_GRACE_MS = "10";
+  process.env.FORGE_MCP_KILL_GRACE_MS = "100";
+  const script = [
+    "process.on('SIGTERM',()=>{});",
+    "process.stdin.setEncoding('utf8');",
+    "let b='';",
+    "process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))>=0){const l=b.slice(0,i);b=b.slice(i+1);if(!l)continue;const m=JSON.parse(l);if(m.id)process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:m.method==='tools/list'?{tools:[]}:{}})+'\\n')}});",
+  ].join("");
+  const client = new McpStdioClient(process.execPath, ["-e", script]);
+  try {
+    await client.connect();
+    const started = Date.now();
+    await client.close();
+    assert.ok(Date.now() - started < 500, "MCP close exceeded its configured bound");
+  } finally {
+    await client.close();
+    if (oldTerminate === undefined) delete process.env.FORGE_MCP_TERMINATE_GRACE_MS;
+    else process.env.FORGE_MCP_TERMINATE_GRACE_MS = oldTerminate;
+    if (oldKill === undefined) delete process.env.FORGE_MCP_KILL_GRACE_MS;
+    else process.env.FORGE_MCP_KILL_GRACE_MS = oldKill;
+  }
 });

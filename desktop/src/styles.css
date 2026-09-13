@@ -704,6 +704,32 @@ body.preview-hover .session-del { display: inline-flex; }
 .audit-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; color: var(--text-muted); font-size: 10.5px; }
 .audit-reason { margin-top: 5px; color: var(--text-secondary); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 
+.reliability-modal { width: min(720px, 92vw); }
+.reliability-state {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary);
+  background: var(--bg);
+}
+.reliability-state.is-healthy { border-color: color-mix(in srgb, var(--green) 38%, var(--border)); }
+.reliability-state.is-violated { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+.reliability-state-mark {
+  display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px;
+  border-radius: 50%; font-weight: 750; color: var(--green);
+  background: color-mix(in srgb, var(--green) 13%, transparent);
+}
+.is-violated .reliability-state-mark { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+.reliability-state strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.reliability-state div div { font-size: 11.5px; color: var(--text-muted); }
+.reliability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.reliability-metric { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+.reliability-value { font-family: var(--font-mono); font-size: 17px; font-weight: 650; color: var(--text); }
+.reliability-label { margin-top: 3px; font-size: 11.5px; font-weight: 650; color: var(--text-secondary); }
+.reliability-detail { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--text-muted); }
+.reliability-violations { margin-top: 12px; padding: 11px 12px; border-radius: var(--radius-sm); color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); font-size: 11.5px; line-height: 1.6; }
+.reliability-violations h4 { margin: 0 0 5px; color: var(--text); font-size: 12px; }
+.reliability-note { margin-top: 10px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.reliability-error { padding: 16px; border-radius: var(--radius-sm); color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); font-size: 12px; }
+
 .prov-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
 .prov-id { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); }
 .prov-default {
@@ -729,4 +755,8 @@ body.preview-hover .session-del { display: inline-flex; }
 @media (max-width: 900px) {
   :root { --gutter: 20px; }
   .sidebar { width: 228px; }
+}
+
+@media (max-width: 680px) {
+  .reliability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

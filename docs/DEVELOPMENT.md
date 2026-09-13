@@ -30,7 +30,13 @@ bash scripts/release-check.sh
 
 It covers server and desktop type checking, vendored Pi integrity, persistence,
 event ordering, guardrails, recovery, compaction, the internal registry, HTTP
-smokes and benchmark goldens.
+smokes, harness reliability invariants and benchmark goldens.
+
+For a read-only report over persisted sessions:
+
+```bash
+npm run reliability
+```
 
 For desktop changes also build the production bundle:
 
@@ -47,7 +53,8 @@ npm run dev
 ```
 
 Available scenes are defined by `desktop/src/preview.tsx`; `hover=1` reveals
-hover-only controls.
+hover-only controls. `scene=reliability` opens the event-derived diagnostics
+modal with representative data.
 
 ## Persistence changes
 

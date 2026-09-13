@@ -29,4 +29,18 @@ describe("ApprovalHub", () => {
     const hub = new ApprovalHub();
     assert.equal(hub.get("ghost"), null);
   });
+
+  test("cancelSession expires pending requests and releases their waiters", async () => {
+    const hub = new ApprovalHub();
+    const waiting = hub.request({
+      requestId: "r1",
+      sessionId: "t1",
+      toolName: "bash",
+      input: { command: "npm test" },
+    });
+    hub.cancelSession("t1");
+    assert.equal(await waiting, false);
+    assert.equal(hub.get("r1")?.status, "expired");
+    assert.deepEqual(hub.listPending("t1"), []);
+  });
 });

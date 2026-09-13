@@ -444,6 +444,17 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return { conversation };
     }
 
+    case "SESSION_INTERRUPTED": {
+      conversation.timeline = upsert(conversation.timeline, {
+        kind: "notice",
+        id: `interrupted-${stamp}`,
+        tone: "warn",
+        icon: "!",
+        text: "Forge restarted before this run finished. The session is recoverable — press Resume to continue.",
+      });
+      return { conversation };
+    }
+
     case "STEERING_QUEUED": {
       // A user steering message: echo it into the timeline immediately.
       // Before this, a steered message existed only in a server-side queue —

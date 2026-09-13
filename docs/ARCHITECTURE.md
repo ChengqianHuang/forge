@@ -107,3 +107,20 @@ guardrails. Running configuration changes mutate that single live Session
 object, so terminal settlement cannot overwrite a user's change with an older
 snapshot. File before-images under the Forge home directory are internal
 insurance; they are not represented as a complete user-facing Undo feature.
+
+At server startup, a persisted `running` session with no live runtime is
+reclassified as a resumable failure and records `SESSION_INTERRUPTED` plus one
+terminal `SESSION_FAILED`. During a live run, success, error, watchdog timeout,
+user Stop and shutdown converge on one idempotent finalizer. Stop has precedence
+over later errors, the runtime event gate closes before teardown, pending
+approvals are expired, and plugin/process cleanup is bounded. A late provider
+result therefore cannot reopen or double-settle a cancelled session.
+
+## Reliability projection
+
+Harness measurements are computed from the event log rather than stored as a
+parallel telemetry database. The projection checks event identity/order,
+run-to-terminal cardinality, tool call/result pairing, core-guard coverage,
+approval settlement, cancellation convergence, recovery markers and plugin
+failures. These are Forge mechanism invariants; generated text and model task
+quality are deliberately outside the projection.

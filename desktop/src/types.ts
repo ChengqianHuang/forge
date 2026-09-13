@@ -199,3 +199,23 @@ export interface PluginCapabilitySnapshot {
   }>;
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
 }
+
+export interface ReliabilityMetrics {
+  eventCount: number;
+  wallMs: number;
+  runs: { started: number; endedByPi: number; terminal: number };
+  tools: {
+    calls: number;
+    results: number;
+    errors: number;
+    guarded: number;
+    guardCoverage: number;
+    unfinished: number;
+    orphanResults: number;
+  };
+  approvals: { requested: number; resolved: number; pending: number; p95LatencyMs: number | null };
+  cancellation: { requested: number; settled: number; p95LatencyMs: number | null };
+  recovery: { interrupted: number; resumed: number; messagesRecovered: number };
+  plugins: { failures: number };
+  integrity: { healthy: boolean; violations: string[] };
+}

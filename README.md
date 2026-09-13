@@ -79,6 +79,7 @@ servers are exposed through the desktop UI.
 ```bash
 npm run typecheck
 npm --prefix desktop run typecheck
+npm run reliability
 bash scripts/release-check.sh
 ```
 

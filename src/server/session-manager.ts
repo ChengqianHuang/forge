@@ -11,6 +11,22 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 function idleTimeoutMs(): number {
   return Number(process.env.FORGE_IDLE_TIMEOUT_MS ?? 5 * 60_000);
 }
+function cancelGraceMs(): number {
+  return Number(process.env.FORGE_CANCEL_GRACE_MS ?? 3_000);
+}
+function shutdownGraceMs(): number {
+  return Number(process.env.FORGE_SHUTDOWN_GRACE_MS ?? 5_000);
+}
+function teardownGraceMs(): number {
+  return Number(process.env.FORGE_TEARDOWN_GRACE_MS ?? 6_000);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
 import type { Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { runAgent } from "../agent-runner.ts";
@@ -38,6 +54,7 @@ import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
 import type { PluginCapabilitySnapshot } from "../plugins/types.ts";
 import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
+import { extractReliabilityMetrics } from "../reliability/metrics.ts";
 
 /**
  * Everything that exists only while one run of a session is live. The
@@ -82,7 +99,19 @@ type SessionRuntime = {
   pendingThinking: ThinkingLevel | null;
   /** Set by the user's Stop action; never reinterpret it as an agent failure. */
   stopRequested: boolean;
+  /** Closed synchronously when finalization begins; all late loop/plugin
+   * output is discarded after this point. */
+  acceptEvents: boolean;
+  closeEventGate: () => void;
+  /** The one terminal commit for this run. All completion paths share it. */
+  finalizePromise: Promise<void> | null;
+  cancelTimer?: ReturnType<typeof setTimeout> | undefined;
 };
+
+type RunOutcome =
+  | { kind: "result"; final: Session }
+  | { kind: "error"; error: unknown }
+  | { kind: "cancelled" };
 
 /**
  * Sessions in these terminal states can be resumed. `running` is forbidden
@@ -115,9 +144,23 @@ export class SessionManager {
       projects: ProjectsRegistry;
       approvalHub: ApprovalHub;
       plugins?: PluginRegistry;
+      /** Test seam for lifecycle behavior; production uses the real Pi loop. */
+      agentRunner?: typeof runAgent;
     },
   ) {
     this.plugins = opts.plugins ?? createBuiltinPluginRegistry();
+  }
+
+  /** Repair sessions left in `running` by a previous process. The failed
+   * state intentionally reuses the existing Resume path and UI. */
+  async reconcileInterruptedSessions(): Promise<number> {
+    let repaired = 0;
+    for (const session of await listSessions()) {
+      if (session.status !== "running" || this.runtimes.has(session.id)) continue;
+      await this.markInterrupted(session);
+      repaired += 1;
+    }
+    return repaired;
   }
 
   async create(input: {
@@ -201,7 +244,15 @@ export class SessionManager {
       throw new Error(`session ${sessionId} not found`);
     }
 
-    // 2. Status whitelist. Remember the prior state: a `completed` resume is
+    // 2. A live runtime always wins over persisted state. A persisted
+    // `running` record without one is an orphan from a previous process and
+    // is repaired into the ordinary failed/resumable path.
+    if (this.runtimes.has(sessionId)) {
+      throw new Error(`session ${sessionId} is already running — cannot resume concurrently`);
+    }
+    if (session.status === "running") await this.markInterrupted(session);
+
+    // 3. Status whitelist. Remember the prior state: a `completed` resume is
     // a chat-style follow-up (prompt = the new message); `failed`/`cancelled`
     // is a retry (prompt = the goal).
     const priorStatus = session.status;
@@ -209,11 +260,6 @@ export class SessionManager {
       throw new Error(
         `session ${sessionId} cannot be resumed (status=${session.status}; only failed/cancelled/completed are resumable)`,
       );
-    }
-
-    // 3. Not already active.
-    if (this.runtimes.has(sessionId)) {
-      throw new Error(`session ${sessionId} is already running — cannot resume concurrently`);
     }
 
     // 4. Replay messages from event log.
@@ -393,15 +439,16 @@ export class SessionManager {
     const steeringQueue: AgentMessage[] = initialSteering ? [initialSteering] : [];
     const controller = new AbortController();
     let forceCompaction = false;
+    let acceptEvents = true;
+    const emitEvent = (type: Parameters<typeof appendEvent>[1], payload: Record<string, unknown>) =>
+      acceptEvents
+        ? appendEvent(sessionId, type, payload)
+        : Promise.resolve(undefined);
     const disabledPluginIds = userDisabledPluginIds(await readEvents(sessionId));
     const plugins = await this.plugins.activate({
       session,
       signal: controller.signal,
-      emitEvent: (type, payload) => appendEvent(
-        sessionId,
-        type as Parameters<typeof appendEvent>[1],
-        payload,
-      ),
+      emitEvent: (type, payload) => emitEvent(type as Parameters<typeof appendEvent>[1], payload),
       enqueueSteering: (message) => steeringQueue.push(message),
       requestCompaction: () => { forceCompaction = true; },
     }, { disabledPluginIds });
@@ -417,6 +464,7 @@ export class SessionManager {
       approval: this.opts.approvalHub,
       steeringQueue,
       usage,
+      emitEvent,
     };
     const runtime: SessionRuntime = {
       runPromise: Promise.resolve(session),
@@ -431,6 +479,9 @@ export class SessionManager {
       pendingModel: null,
       pendingThinking: null,
       stopRequested: false,
+      acceptEvents: true,
+      closeEventGate: () => { acceptEvents = false; },
+      finalizePromise: null,
     };
     // Register before the loop starts so steer/abort/switch* calls that race
     // with the first turn find the runtime. settle()/the catch handler remove
@@ -441,9 +492,8 @@ export class SessionManager {
     // clock runs out and we abort the run; the catch handler below records
     // it as a timeout failure (with a resume hint), not a user cancellation.
     runtime.watchdog = setInterval(() => {
-      if (Date.now() - runtime.lastActivityAt > idleTimeoutMs()) {
+      if (!runtime.stopRequested && !runtime.finalizePromise && Date.now() - runtime.lastActivityAt > idleTimeoutMs()) {
         runtime.timedOut = true;
-        runtime.stopRequested = false;
         runtime.controller.abort();
         this.clearWatchdog(runtime);
       }
@@ -451,7 +501,8 @@ export class SessionManager {
     // Never keep the process alive for the watchdog alone.
     runtime.watchdog.unref();
 
-    const runPromise = runAgent({
+    const runner = this.opts.agentRunner ?? runAgent;
+    const runPromise = runner({
       session,
       model: buildModel(subscription),
       streamFn: makeStreamFnWithKey(subscription.apiKey, providerEnv(subscription)),
@@ -478,34 +529,17 @@ export class SessionManager {
         return requested;
       },
       plugins,
+      emitEvent,
       onActivity: () => {
         runtime.lastActivityAt = Date.now();
       },
     })
       .then(async (final) => {
-        this.clearWatchdog(runtime);
-        await this.settle(sessionId, final);
+        await this.finalizeRun(sessionId, runtime, { kind: "result", final });
         return final;
       })
       .catch(async (err) => {
-        this.clearWatchdog(runtime);
-        const timedOut = runtime.timedOut;
-        const stopped = runtime.stopRequested && !timedOut;
-        session.status = stopped ? "cancelled" : "failed";
-        session.failureReason = stopped
-          ? null
-          : timedOut
-            ? `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`
-            : err instanceof Error
-              ? err.message
-              : String(err);
-        session.updatedAt = Date.now();
-        await saveSession(session);
-        await appendEvent(sessionId, stopped ? "SESSION_CANCELLED" : "SESSION_FAILED", {
-          ...(stopped ? { reason: "stopped by user" } : { reason: session.failureReason }),
-        }).catch(() => {});
-        this.runtimes.delete(sessionId);
-        await plugins.dispose();
+        await this.finalizeRun(sessionId, runtime, { kind: "error", error: err });
         throw err;
       });
 
@@ -575,11 +609,20 @@ export class SessionManager {
     return projectPluginCapabilities(this.plugins.capabilities(), await readEvents(sessionId));
   }
 
+  /** Read-only projection of the durable log; never a second state store. */
+  async reliability(sessionId: string) {
+    const session = await loadSession(sessionId);
+    if (!session) throw new Error(`session ${sessionId} not found`);
+    return extractReliabilityMetrics({
+      events: await readEvents(sessionId),
+      sessionStatus: session.status,
+    });
+  }
+
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return { ok: false, message: "session is not running" };
-    runtime.stopRequested = true;
-    runtime.controller.abort();
+    this.requestStop(sessionId, runtime, "user");
     return { ok: true, message: "aborting" };
   }
 
@@ -587,10 +630,15 @@ export class SessionManager {
   async shutdown(): Promise<void> {
     const runtimes = [...this.runtimes.values()];
     for (const runtime of runtimes) {
-      runtime.stopRequested = true;
-      runtime.controller.abort();
+      this.requestStop(runtime.session.id, runtime, "server-shutdown");
     }
-    await Promise.allSettled(runtimes.map((runtime) => runtime.runPromise));
+    await Promise.race([
+      Promise.allSettled(runtimes.map((runtime) => runtime.runPromise)).then(() => {}),
+      delay(shutdownGraceMs()),
+    ]);
+    await Promise.allSettled(runtimes.map((runtime) =>
+      this.finalizeRun(runtime.session.id, runtime, { kind: "cancelled" }),
+    ));
   }
 
   async get(sessionId: string): Promise<Session | null> {
@@ -629,27 +677,93 @@ export class SessionManager {
     }
   }
 
-  private async settle(sessionId: string, final: Session): Promise<void> {
-    // The runtime dies with the run: one removal drops the controller,
-    // steering queue, cost guard, live completion config and any pending
-    // switch that never got consumed at a turn boundary. (The old shape kept
-    // settled entries in an `idle` map that nothing ever read — a leak; gone.)
-    const runtime = this.runtimes.get(sessionId);
-    this.runtimes.delete(sessionId);
-    await runtime?.plugins.dispose();
-    if (runtime?.timedOut && !final.failureReason) {
-      final.failureReason = `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`;
+  private requestStop(
+    sessionId: string,
+    runtime: SessionRuntime,
+    reason: "user" | "server-shutdown",
+  ): void {
+    if (runtime.stopRequested || runtime.finalizePromise) return;
+    runtime.stopRequested = true;
+    void appendEvent(sessionId, "SESSION_STOP_REQUESTED", { reason }).catch(() => {});
+    runtime.controller.abort();
+    this.opts.approvalHub.cancelSession(sessionId);
+    runtime.cancelTimer = setTimeout(() => {
+      void this.finalizeRun(sessionId, runtime, { kind: "cancelled" }).catch(() => {});
+    }, cancelGraceMs());
+    runtime.cancelTimer.unref?.();
+  }
+
+  private finalizeRun(
+    sessionId: string,
+    runtime: SessionRuntime,
+    outcome: RunOutcome,
+  ): Promise<void> {
+    if (runtime.finalizePromise) return runtime.finalizePromise;
+    runtime.acceptEvents = false;
+    runtime.closeEventGate();
+    this.clearWatchdog(runtime);
+    if (runtime.cancelTimer) {
+      clearTimeout(runtime.cancelTimer);
+      runtime.cancelTimer = undefined;
     }
-    const status: SessionStatus = runtime?.stopRequested && !runtime?.timedOut
-      ? "cancelled"
-      : final.failureReason ? "failed" : "completed";
-    final.status = status;
-    if (status === "cancelled") final.failureReason = null;
-    if (runtime) final.usage = runtime.usage.snapshot();
-    final.updatedAt = Date.now();
-    await saveSession(final);
-    await appendEvent(sessionId, status === "failed" ? "SESSION_FAILED" : status === "cancelled" ? "SESSION_CANCELLED" : "SESSION_ENDED", {
-      status,
+    if (this.runtimes.get(sessionId) === runtime) this.runtimes.delete(sessionId);
+    this.opts.approvalHub.cancelSession(sessionId);
+
+    runtime.finalizePromise = (async () => {
+      // Plugin disposal is best-effort and bounded as a whole. Individual
+      // plugins already have their own timeout, but N sequential timeouts
+      // must not hold server shutdown open for N×timeout.
+      await Promise.race([
+        runtime.plugins.dispose().catch(() => {}),
+        delay(teardownGraceMs()),
+      ]);
+
+      const final = outcome.kind === "result" ? outcome.final : runtime.session;
+      if (final !== runtime.session) {
+        runtime.session.messages = final.messages;
+        runtime.session.failureReason = final.failureReason;
+      }
+      const target = runtime.session;
+      const stopped = runtime.stopRequested || outcome.kind === "cancelled";
+      const errorReason = outcome.kind === "error"
+        ? outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
+        : null;
+      const timeoutReason = runtime.timedOut
+        ? `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`
+        : null;
+      const status: SessionStatus = stopped
+        ? "cancelled"
+        : timeoutReason || errorReason || target.failureReason ? "failed" : "completed";
+      target.status = status;
+      target.failureReason = status === "cancelled"
+        ? null
+        : timeoutReason ?? errorReason ?? target.failureReason;
+      target.usage = runtime.usage.snapshot();
+      target.updatedAt = Date.now();
+      await saveSession(target);
+      const terminalType = status === "failed"
+        ? "SESSION_FAILED"
+        : status === "cancelled" ? "SESSION_CANCELLED" : "SESSION_ENDED";
+      await appendEvent(sessionId, terminalType, {
+        status,
+        ...(status === "failed" ? { reason: target.failureReason } : {}),
+        ...(status === "cancelled" ? { reason: "stopped by user" } : {}),
+      });
+    })();
+    return runtime.finalizePromise;
+  }
+
+  private async markInterrupted(session: Session): Promise<void> {
+    const reason = "Forge restarted before this run reached a terminal state — resume to continue";
+    session.status = "failed";
+    session.failureReason = reason;
+    session.updatedAt = Date.now();
+    await saveSession(session);
+    await appendEvent(session.id, "SESSION_INTERRUPTED", { reason });
+    await appendEvent(session.id, "SESSION_FAILED", {
+      status: "failed",
+      reason,
+      interrupted: true,
     });
   }
 }
