@@ -40,6 +40,12 @@ export function makeShouldStopAfterTurn(config: GuardrailConfig) {
     const content = (message as { content?: unknown }).content;
 
     // --- 1. Transparent error recovery (before anything else) ---
+    // An abort is a deliberate stop (user Stop button, or the session
+    // watchdog tripping on a hung provider call) — never "recover" it by
+    // steering again; that would fight the abort for MAX_RECOVERY rounds.
+    if (stopReason === "aborted") {
+      return true;
+    }
     if (stopReason === "error") {
       const count = (recoveryCounts.get("error") ?? 0) + 1;
       recoveryCounts.set("error", count);
