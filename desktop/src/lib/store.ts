@@ -42,6 +42,7 @@ export interface DesktopState {
     approvalMode?: ApprovalMode;
   }) => Promise<void>;
   steer: (message: string) => Promise<void>;
+  command: (commandLine: string) => Promise<void>;
   abort: () => Promise<void>;
   resume: (message?: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -308,6 +309,28 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return { conversation };
     }
 
+    case "PLUGIN_OUTPUT": {
+      conversation.timeline = upsert(conversation.timeline, {
+        kind: "notice",
+        id: `plugin-output-${stamp}`,
+        tone: payload.tone === "ok" || payload.tone === "warn" ? payload.tone : "info",
+        icon: "/",
+        text: String(payload.message ?? ""),
+      });
+      return { conversation };
+    }
+
+    case "PLUGIN_FAILED": {
+      conversation.timeline = upsert(conversation.timeline, {
+        kind: "notice",
+        id: `plugin-failed-${stamp}`,
+        tone: "warn",
+        icon: "⚠",
+        text: `插件 ${String(payload.pluginId ?? "unknown")} 已隔离：${String(payload.reason ?? "unknown error")}`,
+      });
+      return { conversation };
+    }
+
     case "MODEL_CHANGED": {
       conversation.modelId = String(payload.modelId ?? "");
       if (typeof payload.providerId === "string") conversation.providerId = payload.providerId;
@@ -391,11 +414,10 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return {};
     }
 
-    // The server emits exactly these two terminal types (session-manager.ts):
-    // SESSION_FAILED for a failed run, SESSION_ENDED for everything else —
-    // a cancelled run is SESSION_ENDED with payload.status = "cancelled".
+    // Terminal session events all refresh persisted state and approvals.
     case "SESSION_ENDED":
-    case "SESSION_FAILED": {
+    case "SESSION_FAILED":
+    case "SESSION_CANCELLED": {
       void store.getState().refreshSessions();
       void pollApprovals();
       return {};
@@ -425,7 +447,7 @@ async function pollApprovals(): Promise<void> {
  * notification would be pure noise.
  */
 function maybeNotifyOutcome(env: EventEnvelope): void {
-  if (env.type !== "SESSION_ENDED" && env.type !== "SESSION_FAILED") return;
+  if (env.type !== "SESSION_ENDED" && env.type !== "SESSION_FAILED" && env.type !== "SESSION_CANCELLED") return;
   if (typeof document === "undefined" || !document.hidden) return;
   const state = store.getState();
   // The stream is opened per session, so the active id is the fallback when a
@@ -473,7 +495,7 @@ export const store = create<DesktopState>((set, get) => ({
   selectProject: async (id) => {
     // Optimistic: the picker should feel instant; the server is the truth and
     // a failed POST reverts via refreshProjects() below. Never swallow the
-    // error silently — that was the original bug (docs/27 §5.4).
+    // error silently — that was the original bug.
     set({ activeProjectId: id, error: null });
     const { selectProject: apiSelect } = await import("./api.ts");
     try {
@@ -556,6 +578,19 @@ export const store = create<DesktopState>((set, get) => ({
     set({ error: null });
     try {
       await steerSession(id, message.trim());
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  command: async (commandLine) => {
+    const id = get().activeSessionId;
+    if (!id || !commandLine.trim()) return;
+    const { executeSlashCommand } = await import("./api.ts");
+    set({ error: null });
+    try {
+      await executeSlashCommand(id, commandLine.trim());
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       throw err;

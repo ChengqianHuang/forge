@@ -1,4 +1,4 @@
-export const SESSION_SCHEMA_VERSION = 8;
+export const SESSION_SCHEMA_VERSION = 9;
 
 type Migration = {
   from: number;
@@ -74,6 +74,15 @@ function addApprovalMode(raw: Record<string, unknown>): Record<string, unknown> 
 }
 
 /**
+ * v8 → v9: message history moves out of the metadata snapshot and into the
+ * event log. The operational import happens in session-store while the raw
+ * v8 `messages` value is still available; new saves omit the field.
+ */
+function moveMessagesToEventLog(raw: Record<string, unknown>): Record<string, unknown> {
+  return raw;
+}
+
+/**
  * v6 → v7: `cost` (dollars, never enforced) → `usage` (token counters).
  *
  * The dollar layer was removed (2026-09-11); per-session usage is now the
@@ -139,6 +148,11 @@ const MIGRATIONS: readonly Migration[] = [
     from: 7,
     to: 8,
     migrate: (raw) => addApprovalMode(raw),
+  },
+  {
+    from: 8,
+    to: 9,
+    migrate: (raw) => moveMessagesToEventLog(raw),
   },
 ];
 

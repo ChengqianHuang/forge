@@ -3,7 +3,7 @@ import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
-import type { ApprovalMode, ProviderConfig, ThinkingLevel, TimelineEntry } from "../types.ts";
+import type { ApprovalMode, PluginCapabilitySnapshot, ThinkingLevel, TimelineEntry } from "../types.ts";
 
 /** One-line argument summary for a tool row (the full JSON lives behind expand). */
 function summarizeArgs(args: unknown): string {
@@ -124,11 +124,14 @@ export function SessionView({
   const connected = store((s) => s.connected);
   const error = store((s) => s.error);
   const steer = store((s) => s.steer);
+  const command = store((s) => s.command);
   const abort = store((s) => s.abort);
   const resume = store((s) => s.resume);
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
   const [resumeMessage, setResumeMessage] = useState("");
+  const [pluginCapabilities, setPluginCapabilities] = useState<PluginCapabilitySnapshot | null>(null);
+  const [pluginEnabled, setPluginEnabled] = useState<Record<string, boolean>>({});
   const { providers, capabilities, contextWindows } = useModelCatalog();
   const running = status === "running";
   const resumable = status === "failed" || status === "cancelled";
@@ -155,6 +158,18 @@ export function SessionView({
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const pinnedRef = useRef(true);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void import("../lib/api.ts").then(({ fetchPluginCapabilities }) =>
+      fetchPluginCapabilities().then((value) => {
+        if (!alive) return;
+        setPluginCapabilities(value);
+        setPluginEnabled(Object.fromEntries(value.plugins.map((plugin) => [plugin.id, plugin.enabled])));
+      }).catch(() => {}),
+    );
+    return () => { alive = false; };
+  }, []);
 
   // Grow the composer with the content instead of reserving fixed rows.
   useEffect(() => {
@@ -221,6 +236,11 @@ export function SessionView({
   const send = async () => {
     const text = steerInput.trim();
     try {
+      if (text.startsWith("/")) {
+        await command(text);
+        setSteerInput("");
+        return;
+      }
       if (running || canFollowUp) {
         if (!text) return;
         await (running ? steer(text) : resume(text));
@@ -241,6 +261,12 @@ export function SessionView({
       ? "Reply to continue this conversation…"
       : "Describe what to change, or send an empty message to retry the task…";
   const sendLabel = running || canFollowUp ? "Send" : "Retry";
+  const slashQuery = steerInput.startsWith("/") ? steerInput.slice(1).toLowerCase() : null;
+  const slashSuggestions = slashQuery === null
+    ? []
+    : (pluginCapabilities?.slashCommands ?? []).filter(
+      (command) => pluginEnabled[command.pluginId] !== false && command.name.startsWith(slashQuery),
+    );
 
   return (
     <div className="session">
@@ -360,6 +386,21 @@ export function SessionView({
       <footer className="composer-wrap">
         <div className="conversation-composer">
           <div className="composer-box">
+            {slashSuggestions.length > 0 && (
+              <div className="slash-menu" role="listbox" aria-label="Slash commands">
+                {slashSuggestions.map((command) => (
+                  <button
+                    type="button"
+                    key={`${command.pluginId}:${command.name}`}
+                    className="slash-item"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setSteerInput(`/${command.name}`)}
+                  >
+                    <b>/{command.name}</b><span>{command.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               ref={taRef}
               className="composer-ta"
@@ -389,6 +430,33 @@ export function SessionView({
                   onSelectApprovalMode={(mode) => void onApprovalSwitch(mode)}
                   placement="above"
                 />
+                {(pluginCapabilities?.plugins.length ?? 0) > 0 && (
+                  <details className="plugin-picker">
+                    <summary>{pluginCapabilities!.plugins.length} 插件</summary>
+                    <div className="plugin-panel">
+                      {pluginCapabilities!.plugins.map((plugin) => (
+                        <label key={plugin.id} className="plugin-option" title={plugin.capabilities.join(" · ")}>
+                          <input
+                            type="checkbox"
+                            checked={pluginEnabled[plugin.id] !== false}
+                            disabled={!running}
+                            onChange={async (event) => {
+                              const enabled = event.target.checked;
+                              try {
+                                const { setSessionPluginEnabled } = await import("../lib/api.ts");
+                                await setSessionPluginEnabled(sessionId, plugin.id, enabled);
+                                setPluginEnabled((state) => ({ ...state, [plugin.id]: enabled }));
+                              } catch (err) {
+                                console.error("plugin switch failed:", err);
+                              }
+                            }}
+                          />
+                          <span>{plugin.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
                 {!connected && (
                   <span className="meta-item meta-warn" title="Live event stream is reconnecting…">
                     <span className="status-dot" data-tone="warn" />

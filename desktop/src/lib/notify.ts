@@ -18,11 +18,8 @@ export type TaskOutcome = "completed" | "failed" | "cancelled";
 /**
  * Map a session-terminal event to the outcome it reports.
  *
- * The server emits exactly two terminal types (src/server/session-manager.ts):
- * SESSION_FAILED for a failed run and SESSION_ENDED for everything else. A
- * cancelled run therefore arrives as SESSION_ENDED carrying
- * `payload.status = "cancelled"` — `status` is the authoritative field, the
- * event type only distinguishes failure.
+ * `payload.status` is authoritative; the event type is retained for old logs
+ * and for consumers that only need the broad terminal category.
  */
 export function outcomeFromTerminal(type: string, status: unknown): TaskOutcome {
   if (status === "completed" || status === "failed" || status === "cancelled") return status;

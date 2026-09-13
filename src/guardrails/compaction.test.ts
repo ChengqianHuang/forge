@@ -142,6 +142,29 @@ describe("makePrepareNextTurn (truncate-mode compaction)", () => {
     assert.equal(ev.payload.threshold, 120_000);
   });
 
+  test("/compact one-shot request bypasses the token threshold", async () => {
+    const usage = new UsageTracker();
+    let requested = true;
+    const events = capturedEvents();
+    const prepare = makePrepareNextTurn({
+      sessionId: "s1",
+      usage,
+      thresholdTokens: 120_000,
+      keepRecentMessages: 3,
+      takeCompactionRequest: () => {
+        const value = requested;
+        requested = false;
+        return value;
+      },
+      emitEvent: (type, payload) => { events.push({ type, payload }); return Promise.resolve(); },
+    });
+    const ctx = makeCtx(Array.from({ length: 8 }, (_, i) => userMsg(`m${i}`)), 100);
+    const out = await prepare(ctx);
+    assert.equal(out?.context?.messages.length, 3);
+    assert.equal(events[0]?.payload.forced, true);
+    assert.equal(await prepare(ctx), undefined);
+  });
+
   test("does not break the loop when emitEvent throws", async () => {
     const usage = new UsageTracker();
     usage.hydrate({ lastContextTokens: 200_000 });

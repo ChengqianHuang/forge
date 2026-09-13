@@ -8,8 +8,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node --enable-source-maps --import tsx/esm src/cli/serve.ts",
     "bench": "node --enable-source-maps --import tsx/esm src/cli/benchmark.ts",
-    "real-bench": "node --enable-source-maps --import tsx/esm src/cli/real-bench.ts",
-    "typecheck:bench": "tsc --noEmit -p tsconfig.benchmark.json"
+    "real-bench": "node --enable-source-maps --import tsx/esm src/cli/real-bench.ts"
   },
   "devDependencies": {
     "@types/node": "24.12.4",

@@ -1,7 +1,7 @@
 /**
  * Unit tests for the appendEvent fan-out contract.
  *
- * Architecture (docs/25 §6.2):
+ * Architecture (docs/ARCHITECTURE.md):
  * - Control-plane events fan out to the EventBus after writing to disk.
  * - Data-plane events stay in the log only.
  * - Fan-out failure must not break the append chain or FIFO ordering.

@@ -60,6 +60,15 @@ export interface ForgeConfigData {
   modelCapabilities?: Record<string, ThinkingLevel[]>;
   /** Derived by the server (never persisted): each model's context window, for the token meter. */
   modelContextWindows?: Record<string, number>;
+  mcpServers?: Array<{
+    id: string;
+    name?: string;
+    command: string;
+    args: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+    enabled: boolean;
+  }>;
 }
 
 export interface ProjectRecord {
@@ -150,4 +159,15 @@ export interface ConversationView {
   approvalMode: ApprovalMode | null;
   /** Updated by THINKING_CHANGED events (mid-session reasoning switch). */
   thinkingLevel: ThinkingLevel | null;
+}
+
+export interface PluginCapabilitySnapshot {
+  plugins: Array<{
+    id: string;
+    name: string;
+    version: string;
+    capabilities: string[];
+    enabled: boolean;
+  }>;
+  slashCommands: Array<{ name: string; description: string; pluginId: string }>;
 }

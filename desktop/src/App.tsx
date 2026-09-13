@@ -61,7 +61,7 @@ export function App() {
   // A new session is created against the project the user picked in the
   // sidebar (store state), NOT the project of the currently-open session —
   // `activeSession.projectId` here was the old bug: switching projects in the
-  // sidebar had no effect on the next session (docs/27 §5.4).
+  // sidebar had no effect on the next session.
 
   return (
     <div className="app-root">

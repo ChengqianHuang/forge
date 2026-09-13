@@ -26,18 +26,30 @@ import { readEvents, type PersistedEvent } from "./event-log.ts";
  */
 export type ReplayResult = {
   messages: AgentMessage[];
+  /** Whether the log already owns message history, including a crash-open message. */
+  hasMessageEvents: boolean;
 };
 
 export async function replaySession(sessionId: string): Promise<ReplayResult> {
   const events: readonly PersistedEvent[] = await readEvents(sessionId);
 
-  const messages: AgentMessage[] = [];
+  let messages: AgentMessage[] = [];
+  let hasMessageEvents = false;
   for (const ev of events) {
-    if (ev.type !== "MESSAGE_ENDED") continue;
-    const message = ev.payload.message as AgentMessage | undefined;
-    if (!message) continue;
-    messages.push(message);
+    if (ev.type === "MESSAGE_STARTED" || ev.type === "MESSAGE_ENDED") {
+      hasMessageEvents = true;
+    }
+    if (ev.type === "MESSAGE_ENDED") {
+      const message = ev.payload.message as AgentMessage | undefined;
+      if (message) messages.push(message);
+      continue;
+    }
+    if (ev.type === "COMPACTION" && Array.isArray(ev.payload.contextMessages)) {
+      // New compaction events carry the complete post-compaction model
+      // context. Replacement, not another append, is the durable semantic.
+      messages = [...ev.payload.contextMessages] as AgentMessage[];
+    }
   }
 
-  return { messages };
+  return { messages, hasMessageEvents };
 }

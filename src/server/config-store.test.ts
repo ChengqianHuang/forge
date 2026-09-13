@@ -2,7 +2,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { loadForgeConfig, saveForgeConfig, validateProvider, resolveProvider } from "./config-store.ts";
+import { loadForgeConfig, saveForgeConfig, validateProvider, validateMcpServer, resolveProvider } from "./config-store.ts";
 
 const TMP = "/tmp/forge-config-store-tests";
 const HOME = join(TMP, "home");
@@ -39,6 +39,13 @@ describe("validateProvider", () => {
     assert.equal(validateProvider({ api: "openai-completions", apiKey: "", modelId: "m", baseUrl: "https://x" }), null);
     assert.equal(validateProvider({ api: "openai-completions", apiKey: "k", modelId: " ", baseUrl: "https://x" }), null);
   });
+});
+
+test("MCP server config is validated without executing it", () => {
+  assert.deepEqual(validateMcpServer({ id: "fs", command: "npx", args: ["server"], enabled: true }), {
+    id: "fs", command: "npx", args: ["server"], enabled: true,
+  });
+  assert.equal(validateMcpServer({ id: "bad id", command: "npx" }), null);
 });
 
 describe("resolveProvider", () => {

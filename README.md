@@ -2,145 +2,98 @@
 
 > [简体中文](README.zh-CN.md) | English
 
-An open-source, desktop-first **engineering agent**. Give it a goal, and Forge
-plans the work, executes it through an agent runtime, verifies the result with
-real commands, and shows exactly what changed — with you in control.
+Forge is an open-source, desktop-first engineering-agent platform. The LLM is
+the brain; Forge supplies deterministic guardrails, durable records and crash
+recovery around Pi's in-process agent loop.
 
-Forge is not a chatbot and not a coding-assistant wrapper. It is an engineering
-orchestration system built on top of a replaceable Agent Runtime.
-
-> **Status: Alpha, under active development.** The core lifecycle, verification,
-> recovery and memory layers work; real-world task success still depends heavily
-> on the model and runtime you pair it with. See [Known issues](#known-issues).
-
----
+> **Status: Alpha.** The main session, guardrail, recovery, compaction and
+> plugin-platform paths are operational. Real-task quality still depends on
+> the selected model.
 
 ## Architecture
 
-Forge separates *deciding what should happen* from *performing the action*:
+Two layers, one codebase, one agent loop:
 
 ```
-Forge (decides)                     Runtime (performs)
-─────────────────                   ──────────────────
-Task lifecycle                      LLM turns
-Planning                            Tool calls
-Execution management                File edits
-Verification                        Commands
-Recovery                            ...
-Memory
-        │                                   │
-        └────────► AgentRuntime (interface) ─┘
-                          │
-                    Pi runtime adapter
-                          │
-                        Pi
+Desktop (React / Tauri)
+        │ HTTP + ordered SSE
+Forge agent layer
+  guardrails · event log · recovery · plugin registry
+        │ AgentLoopConfig hooks + tools
+Vendored Pi runtime
+  model streaming · agentLoop · tools · compaction · extensions
 ```
 
-Because everything above the `AgentRuntime` interface is runtime-agnostic,
-the runtime underneath stays replaceable. Today Forge ships a **Pi** adapter.
+Pi is committed under `pi/` and linked through npm workspaces. Forge does not
+wrap it in a second loop or second-guess model completion. Every tool call does
+pass through Forge's permission policy, approval posture and write journal;
+stuck detection, error recovery and the user's Stop bound a run.
 
-End to end:
+The event log is the source of truth for SSE replay, audit and crash recovery.
+Usage is measured as token/context telemetry, not a client-side spending
+budget.
 
-```
-Desktop (React / Tauri v2)
-        │  HTTP + SSE
-   forge serve (Node sidecar)
-        │
-   TaskManager ──► Orchestrator (state machine)
-        │              UNDERSTAND → PLAN → EXECUTE → OBSERVE → FIX → COMPLETE
-        │
-   AgentRuntime ──► Pi subprocess (NDJSON RPC) ──► Model provider
-```
+## Plugin platform
 
-## Task lifecycle
+New removable capabilities belong in plugins rather than the kernel. The
+session-scoped registry currently supports:
 
-```
-READY → UNDERSTAND → PLAN → EXECUTE → OBSERVE ──┬──► EVALUATE → COMPLETE
-                          ▲                     │
-                          └──────── FIX ────────┘
-```
+- slash commands (`/compact`, `/status`, `/context`);
+- Pi tools, including MCP stdio servers configured in Settings;
+- all six `AgentLoopConfig` guardrail hooks;
+- agent-event subscribers and shared session services;
+- UI capability descriptors and timeline output.
 
-Nothing completes on the model's word alone: a step is done only when its
-success criteria pass (`file_exists`, `file_contains`, `command_exit_zero`,
-`test_pass`, ...). Failures go through a bounded FIX budget, then surface.
+Plugin failures are isolated to that plugin in that session. Core safety hooks
+run first, built-in tool names cannot be shadowed, and MCP tools follow the same
+approval path as built-ins. See [the internal registry](docs/INTERNAL-PLUGINS.md).
 
-## Conversation vs Engineering Task
+## Safety and recovery
 
-Not every input is a task. Forge routes the first message of a session:
-
-```
-user input → Intent Router (server-side mini completion)
-                 ├─ conversation → one model call, plain reply, lightweight session record
-                 └─ task         → full lifecycle: plan → execute → verify → complete
-```
-
-Chat stays chat (no fake plans, no fake verification steps); real engineering
-requests get the full pipeline.
-
-## Safety
-
-- **Guard**: capability-based policy on every tool call — `read/write/edit`
-  allowed; `bash`, network and git writes ask; destructive actions denied and
-  terminate the task. "Always allow" writes a rule to `~/.forge/guard.json`.
-- **In-place execution**: tasks run in the project directory you selected, not a
-  sandboxed copy — which is exactly why approvals exist.
-- **Diff & Undo**: file writes are journalled before they happen; the desktop
-  shows the diff and can restore it.
+- Read-only operations may run automatically; mutations follow the selected
+  approval mode. The destructive deny floor is never relaxed.
+- File writes retain before-image backups under the Forge home directory as
+  internal insurance. User-facing recovery is git plus command approvals;
+  Forge does not claim a partial universal Undo.
+- Per-session JSONL logs are FIFO ordered and drive replay, SSE and recovery.
+- Repeated action/error patterns, monologues and hung provider calls terminate
+  honestly instead of looping forever.
 
 ## Getting started
 
-Requirements: Node 22+, Rust (for the desktop shell). The **Pi** runtime is
-vendored at `pi/` and part of this repo — we evolve it directly.
+Requirements: Node 22+ and Rust for the desktop shell.
 
 ```bash
-# Desktop app
-cd desktop
 npm install
-npm run tauri dev
+cd desktop && npm install && npm run tauri dev
 
-# Or run the server only
-npx tsx src/cli/serve.ts --port 5300 --runtime pi
-
-# Or run a single task from the CLI
-npx tsx src/cli/run.ts run "create a TypeScript utility module with tests"
+# server only
+npm start
 ```
 
-Manage model subscriptions in the app's Settings (add multiple vendors/models,
-set a default, switch per task or per session), or write
-`~/.forge/forge-config.json` directly.
+Model subscriptions, reasoning effort, approval posture, projects and MCP
+servers are exposed through the desktop UI.
 
 ## Development
 
 ```bash
-npm run typecheck              # server + core typecheck
-cd desktop && npm run typecheck
-bash scripts/release-check.sh  # typecheck + unit tests + integration + fresh-install (25 checks)
+npm run typecheck
+npm --prefix desktop run typecheck
+bash scripts/release-check.sh
 ```
 
-Design notes live in `docs/`, engineering rules in `AGENTS.md`, and the
-product direction in `ROADMAP.md`.
-
-## Known issues
-
-- Streaming CJK corruption (**fixed**): with some providers the streamed
-  `text_delta` events arrived with chunk reordering. The root cause was in
-  Forge, not the runtime: fire-and-forget event-log appends raced in the
-  libuv threadpool and scrambled the ordered JSONL that the SSE stream
-  serves. Fixed with a per-task FIFO append queue
-  (`src/core/persistence/event-log.ts`). Runtime deltas were never corrupted;
-  the `message_end` authoritative-text fallback from the earlier mitigation
-  remains as defense in depth. See `docs/19-PI-UPSTREAM-ISSUES.md`.
-- Real-task success rate varies a lot by model; weak agentic models produce
-  plans they cannot finish. Verification will catch it, but the task fails.
+The repository rules live in [AGENTS.md](AGENTS.md). Start with the
+[product direction](docs/PRODUCT.md) for the product boundary, then use
+`docs/` for current architecture and implementation decisions.
 
 ## Layout
 
 ```
-src/           Forge core: orchestrator, planner, runtime interface, server, guard, memory
-desktop/       Tauri v2 + React desktop app
-scripts/       release verification
-docs/          design & architecture notes
-benchmark/     golden task benchmarks
+src/           Forge agent layer, server, guardrails and plugin registry
+desktop/       Tauri v2 + React desktop application
+pi/            vendored Pi runtime workspaces
+scripts/       release and development checks
+docs/          current architecture and development documentation
 ```
 
 ## License

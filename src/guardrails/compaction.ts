@@ -105,6 +105,8 @@ export function makePrepareNextTurn(opts: {
   takeModelSwitch?: (() => Model<any> | null) | undefined;
   /** Mid-session thinking-level switch: same consume-once contract. */
   takeThinkingSwitch?: (() => ThinkingLevel | null) | undefined;
+  /** Explicit operator request from /compact. Consumed once. */
+  takeCompactionRequest?: (() => boolean) | undefined;
 }): (ctx: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> {
   const threshold =
     opts.thresholdTokens ??
@@ -166,7 +168,8 @@ export function makePrepareNextTurn(opts: {
       return update;
     }
 
-    if (lastInput === null || lastInput <= threshold) {
+    const forced = opts.takeCompactionRequest?.() ?? false;
+    if (!forced && (lastInput === null || lastInput <= threshold)) {
       return undefined; // Below threshold — no compaction.
     }
 
@@ -243,7 +246,8 @@ export function makePrepareNextTurn(opts: {
 
             await opts
               .emitEvent("COMPACTION", {
-                mode: "llm-summary",
+            mode: "llm-summary",
+            forced,
                 beforeCount: messages.length,
                 afterCount: newMessages.length,
                 droppedCount: messages.length - newMessages.length,
@@ -251,6 +255,7 @@ export function makePrepareNextTurn(opts: {
                 threshold,
                 summaryChars: result.value.summary.length,
                 retainedTail: result.value.retainedTail.length,
+                contextMessages: newMessages,
               })
               .catch(() => {});
 
@@ -278,12 +283,14 @@ export function makePrepareNextTurn(opts: {
 
     await opts
       .emitEvent("COMPACTION", {
-        mode: "truncate",
+      mode: "truncate",
+      forced,
         beforeCount: messages.length,
         afterCount: keptMessages.length,
         droppedCount,
         beforeTokens: lastInput,
         threshold,
+        contextMessages: keptMessages,
       })
       .catch(() => {});
 

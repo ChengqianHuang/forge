@@ -8,6 +8,7 @@ import type {
   ProviderApi,
   Session,
   ThinkingLevel,
+  PluginCapabilitySnapshot,
 } from "../types.ts";
 
 export type DesktopConfig = { baseUrl: string; token: string };
@@ -76,6 +77,18 @@ export async function fetchSession(id: string): Promise<Session> {
 
 export async function steerSession(id: string, message: string): Promise<void> {
   await send(`/sessions/${id}/steer`, "POST", { message });
+}
+
+export async function executeSlashCommand(id: string, command: string): Promise<void> {
+  await send(`/sessions/${id}/commands`, "POST", { command });
+}
+
+export async function fetchPluginCapabilities(): Promise<PluginCapabilitySnapshot> {
+  return getJson("/plugins/capabilities");
+}
+
+export async function setSessionPluginEnabled(id: string, pluginId: string, enabled: boolean): Promise<void> {
+  await send(`/sessions/${id}/plugins/${encodeURIComponent(pluginId)}`, "POST", { enabled });
 }
 
 export async function abortSession(id: string): Promise<void> {

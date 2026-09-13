@@ -169,8 +169,6 @@ export function ModelPicker({
 
           <div className="picker-rule" />
 
-          <div className="picker-rule" />
-
           <div className="picker-group">
             <div className="picker-group-label">思考强度</div>
             {!reasoningSupported ? (

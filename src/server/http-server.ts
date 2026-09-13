@@ -10,6 +10,8 @@ import type { ProviderApi } from "./config-store.ts";
 import { discoverModels } from "./model-discovery.ts";
 import { buildModel, modelThinkingLevels } from "./model-resolver.ts";
 import type { ThinkingLevel } from "../types.ts";
+import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
+import { createMcpPlugin, McpStdioClient } from "../plugins/mcp.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
 const THINKING_LEVEL_VALUES: ReadonlySet<string> = new Set([
@@ -43,7 +45,17 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
   const host = opts.host ?? "127.0.0.1";
   const projects = new ProjectsRegistry(opts.forgeHome);
   const approvalHub = new ApprovalHub();
-  const manager = new SessionManager({ forgeHome: opts.forgeHome, projects, approvalHub });
+  const plugins = createBuiltinPluginRegistry();
+  const startupConfig = await loadForgeConfig(opts.forgeHome);
+  for (const mcp of startupConfig.mcpServers ?? []) {
+    if (!mcp.enabled) continue;
+    plugins.register(createMcpPlugin({
+      id: mcp.id,
+      ...(mcp.name ? { name: mcp.name } : {}),
+      createClient: () => new McpStdioClient(mcp.command, mcp.args, mcp.cwd, mcp.env),
+    }));
+  }
+  const manager = new SessionManager({ forgeHome: opts.forgeHome, projects, approvalHub, plugins });
   const token = newToken();
 
   const server: Server = createServer(async (req: IncomingMessage, res) => {
@@ -119,6 +131,40 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "commands") {
+        const body = await readBody(req);
+        const command = typeof body.command === "string" ? body.command : "";
+        if (!command.startsWith("/")) {
+          json(res, 400, { error: "command must start with /" });
+          return;
+        }
+        try {
+          json(res, 200, await manager.command(parts[1]!, command));
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/plugins/capabilities") {
+        json(res, 200, plugins.capabilities());
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "plugins" && parts.length === 4) {
+        const body = await readBody(req);
+        if (typeof body.enabled !== "boolean") {
+          json(res, 400, { error: "enabled must be boolean" });
+          return;
+        }
+        try {
+          json(res, 200, await manager.setPluginEnabled(parts[1]!, parts[3]!, body.enabled));
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
       // Mid-session model switch. Running: effective at the next turn
       // boundary; idle: persisted for the next resume.
       if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "model") {
@@ -180,8 +226,8 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
       }
 
       // POST /sessions/:id/resume — recover a failed/cancelled session.
-      // Optional body: { message?: string } → injected as a user turn +
-      // steering queue entry. Errors:
+      // Optional body: { message?: string } → one new prompt for completed
+      // sessions, or initial steering for failed/cancelled sessions. Errors:
       //   404 = session not found
       //   409 = session status not in {failed, cancelled} OR already active
       //   500 = replay or subscription lookup failed
@@ -291,7 +337,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
 
       // Switch the active project. The desktop's project picker posts here;
       // without this route the request 404s and the picker silently reverts
-      // (the UI used to swallow the error). See docs/27 §5.4.
+      // (the UI used to swallow the error).
       if (req.method === "POST" && url.pathname === "/projects/select") {
         const body = await readBody(req);
         const id = typeof body.id === "string" ? body.id : "";
@@ -327,6 +373,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     port,
     token,
     close: async () => {
+      await manager.shutdown();
       server.close();
     },
   };

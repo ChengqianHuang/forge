@@ -44,7 +44,7 @@ export function extractMetrics(input: {
   };
 }
 
-/** ROADMAP §7 style single-line report. */
+/** Compact single-line benchmark report. */
 export function formatReportLine(name: string, category: string, goal: string, m: RunMetrics): string {
   return `  -> state=${m.state} wall=${m.wallMs}ms turns=${m.turns} tok=${m.tokens}${m.stuckPatterns.length > 0 ? ` stuck=${m.stuckPatterns.join(",")}` : ""} [${category}] ${goal} (${name})`;
 }

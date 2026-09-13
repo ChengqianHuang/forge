@@ -1,6 +1,6 @@
 /**
  * Regression tests for the beforeToolCall hook's two wiring bugs found in the
- * architecture review (docs/27 §5.2 / §5.3) — both were silent no-ops:
+ * guardrail wiring review — both were silent no-ops:
  *
  *   1. Undo journaling read `process.env.FORGE_UNDO_DIR`, which nothing in
  *      production ever set, so `journalFile` returned null immediately. The

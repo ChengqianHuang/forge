@@ -45,6 +45,7 @@ describe("replaySession", () => {
     await freshSession();
     const r = await replaySession(sessionId);
     assert.deepEqual(r.messages, []);
+    assert.equal(r.hasMessageEvents, false);
   });
 
   test("replays MESSAGE_ENDED messages, drops MESSAGE_STARTED and audit events", async () => {
@@ -145,6 +146,22 @@ describe("replaySession", () => {
     const r = await replaySession(sessionId);
     assert.equal(r.messages.length, 1);
     assert.equal(textOf(r.messages[0]), "halfway done");
+  });
+
+  test("replaces model history at a durable compaction boundary", async () => {
+    await freshSession();
+    for (const text of ["old-1", "old-2", "retained"]) {
+      await appendEvent(sessionId, "MESSAGE_ENDED", { message: userMsg(text) });
+    }
+    await appendEvent(sessionId, "COMPACTION", {
+      mode: "llm-summary",
+      contextMessages: [userMsg("summary"), userMsg("retained")],
+    });
+    await appendEvent(sessionId, "MESSAGE_ENDED", { message: assistantMsg("after") });
+
+    const r = await replaySession(sessionId);
+    assert.deepEqual(r.messages.map(textOf), ["summary", "retained", "after"]);
+    assert.equal(r.hasMessageEvents, true);
   });
 
   test("ignores MESSAGE_ENDED with no message payload", async () => {

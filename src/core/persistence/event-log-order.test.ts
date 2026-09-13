@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEvent, readEvents } from "./event-log.ts";
@@ -55,5 +55,42 @@ describe("event log append ordering", () => {
     assert.equal(events.length, 1);
     assert.equal(events[0]?.id, event.id);
     assert.equal(events[0]?.type, "SESSION_CREATED");
+  });
+
+  test("drops an interrupted final record on read and repairs it before append", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "forge-events-tail-"));
+    process.env.FORGE_EVENTS_DIR = dir;
+    const sessionId = `tail-test-${Date.now()}`;
+    const path = join(dir, `${sessionId}.events.jsonl`);
+    const first = JSON.stringify({
+      id: "one", type: "SESSION_CREATED", sessionId, at: 1, payload: {},
+    });
+    await writeFile(path, `${first}\n{\"id\":\"interrupted`, "utf8");
+
+    assert.deepEqual((await readEvents(sessionId)).map((event) => event.id), ["one"]);
+    await appendEvent(sessionId, "SESSION_ENDED", {});
+
+    const repaired = await readFile(path, "utf8");
+    assert.equal(repaired.trimEnd().split("\n").length, 2);
+    assert.deepEqual((await readEvents(sessionId)).map((event) => event.type), [
+      "SESSION_CREATED",
+      "SESSION_ENDED",
+    ]);
+  });
+
+  test("preserves a complete final record that only lacks its newline", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "forge-events-tail-"));
+    process.env.FORGE_EVENTS_DIR = dir;
+    const sessionId = `newline-test-${Date.now()}`;
+    const path = join(dir, `${sessionId}.events.jsonl`);
+    await writeFile(path, JSON.stringify({
+      id: "one", type: "SESSION_CREATED", sessionId, at: 1, payload: {},
+    }), "utf8");
+
+    await appendEvent(sessionId, "SESSION_ENDED", {});
+    assert.deepEqual((await readEvents(sessionId)).map((event) => event.type), [
+      "SESSION_CREATED",
+      "SESSION_ENDED",
+    ]);
   });
 });

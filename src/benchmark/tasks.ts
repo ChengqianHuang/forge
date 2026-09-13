@@ -1,5 +1,5 @@
 /**
- * Phase 6 benchmark: the four golden tasks (ROADMAP §7).
+ * Deterministic golden tasks for the current runner and guardrails.
  *
  * Each task = a deterministic LLM script + session config + assertions.
  * Everything else (agentLoop, tools, guardrails, event log) runs for real.

@@ -15,6 +15,7 @@ import { makeTransformContext } from "./guardrails/transform-context.ts";
 import { makePrepareNextTurn } from "./guardrails/compaction.ts";
 import { makeShouldStopAfterTurn } from "./guardrails/should-stop-after-turn.ts";
 import type { GuardrailConfig } from "./guardrails/types.ts";
+import type { PluginHost } from "./plugins/registry.ts";
 import type { Session } from "./types.ts";
 
 function defaultConvertToLlm(messages: AgentMessage[]): AgentMessage[] {
@@ -37,7 +38,7 @@ function buildSystemPrompt(session: Session): string {
 /**
  * Run Pi's agentLoop in-process with Forge guardrails injected as hooks.
  * Every event is consumed: mapped into the FIFO event log (persistence +
- * SSE source of truth), and usage is fed into the cost guard. Control-plane
+ * SSE source of truth), and plugins consume lifecycle events. Control-plane
  * events fan out from the event log to the in-process EventBus automatically
  * — see appendEvent().
  */
@@ -65,6 +66,10 @@ export async function runAgent(opts: {
   /** Called on every persisted agent event — the inactivity watchdog's
    *  progress signal. Absent in tests that don't care. */
   onActivity?: (() => void) | undefined;
+  /** Session-scoped plugin host. Its tools/hooks/events are isolated by the registry. */
+  plugins?: PluginHost | undefined;
+  /** One-shot operator compaction request. */
+  takeCompactionRequest?: (() => boolean) | undefined;
 }): Promise<Session> {
   const {
     session,
@@ -77,9 +82,14 @@ export async function runAgent(opts: {
     thinkingLevel,
     takeThinkingSwitch,
     onActivity,
+    plugins,
+    takeCompactionRequest,
   } = opts;
 
-  const tools = createCodingTools(session.workspace) ?? [];
+  const coreTools = createCodingTools(session.workspace) ?? [];
+  // Core names are reserved: a plugin may add tools, never shadow Forge's
+  // guarded read/write/bash surface by registering the same name.
+  const tools = [...coreTools, ...(plugins?.tools(coreTools.map((tool) => tool.name)) ?? [])];
   const context: AgentContext = {
     systemPrompt: buildSystemPrompt(session),
     messages: session.messages,
@@ -89,7 +99,6 @@ export async function runAgent(opts: {
   const config: AgentLoopConfig = {
     model,
     convertToLlm: defaultConvertToLlm as AgentLoopConfig["convertToLlm"],
-    transformContext: makeTransformContext(),
   };
 
   // Gate the reasoning level on the model's own capability flag. The adapters
@@ -102,21 +111,24 @@ export async function runAgent(opts: {
   }
 
   if (guardrails) {
-    config.beforeToolCall = makeBeforeToolCall(guardrails);
-    config.afterToolCall = makeAfterToolCall(guardrails);
-    config.shouldStopAfterTurn = makeShouldStopAfterTurn(guardrails);
-    config.getSteeringMessages = async () => guardrails.steeringQueue.splice(0);
+    const coreHooks = {
+      beforeToolCall: makeBeforeToolCall(guardrails),
+      afterToolCall: makeAfterToolCall(guardrails),
+      shouldStopAfterTurn: makeShouldStopAfterTurn(guardrails),
+      getSteeringMessages: async () => guardrails.steeringQueue.splice(0),
+      transformContext: makeTransformContext(),
     // prepareNextTurn uses the real per-turn inputTokens (provider-reported)
     // rather than the character estimate in transformContext. transformContext
     // remains as a coarse last-resort guard for sessions without cost data.
     // The summary runtime reuses the subscription streamFn, so the summary
     // call rides on the same key without keys landing in persisted data.
-    config.prepareNextTurn = makePrepareNextTurn({
+      prepareNextTurn: makePrepareNextTurn({
       sessionId: session.id,
       usage: guardrails.usage,
       emitEvent: (type, payload) => appendEvent(session.id, type as Parameters<typeof appendEvent>[1], payload),
       takeModelSwitch,
       takeThinkingSwitch,
+      takeCompactionRequest,
       compact: {
         model,
         completeSimple: async (m: unknown, context: unknown, options: unknown) => {
@@ -128,7 +140,11 @@ export async function runAgent(opts: {
           return await stream.result();
         },
       },
-    });
+      }),
+    };
+    Object.assign(config, plugins?.hooks(coreHooks) ?? coreHooks);
+  } else {
+    config.transformContext = makeTransformContext();
   }
 
   const prompts: AgentMessage[] = [
@@ -147,23 +163,7 @@ export async function runAgent(opts: {
       await appendEvent(session.id, mapped.type, mapped.payload);
       onActivity?.();
     }
-    // Usage tracking from assistant usage (authoritative per-message totals).
-    if (event.type === "message_end" && guardrails) {
-      const message = event.message as { role?: string; usage?: unknown };
-      if (message.role === "assistant" && message.usage) {
-        guardrails.usage.trackUsage(
-          message.usage as Parameters<typeof guardrails.usage.trackUsage>[0],
-        );
-        const s = guardrails.usage.snapshot();
-        await appendEvent(session.id, "USAGE_UPDATE", {
-          tokensIn: s.tokensIn,
-          tokensOut: s.tokensOut,
-          cacheRead: s.cacheRead,
-          cacheWrite: s.cacheWrite,
-          contextTokens: s.lastContextTokens,
-        });
-      }
-    }
+    await plugins?.onAgentEvent(event);
   }
 
   // Pi's `agentLoop` returns `result()` as the *delta* (newMessages) — only

@@ -23,5 +23,5 @@
     "lib": ["ES2023"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "pi", "src/cli/benchmark.ts", "benchmark"]
+  "exclude": ["node_modules", "dist", "pi"]
 }

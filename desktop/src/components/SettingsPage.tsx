@@ -30,6 +30,14 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     });
   };
 
+  const updateMcp = (id: string, patch: Partial<NonNullable<ForgeConfigData["mcpServers"]>[number]>) => {
+    if (!config) return;
+    setConfig({
+      ...config,
+      mcpServers: (config.mcpServers ?? []).map((server) => server.id === id ? { ...server, ...patch } : server),
+    });
+  };
+
   const discover = async (p: ForgeConfigData["providers"][number]) => {
     setDiscovering(p.id);
     setDiscoverError((m) => ({ ...m, [p.id]: "" }));
@@ -216,6 +224,46 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             }
           >
             + Add subscription
+          </button>
+
+          <div className="settings-section-head">
+            <h3 className="modal-title">MCP tool servers</h3>
+            <div className="modal-sub">Enabled servers are discovered at Forge startup; their tools join the same guardrail path as built-in tools.</div>
+          </div>
+          {(config?.mcpServers ?? []).map((server) => (
+            <div key={server.id} className="card">
+              <div className="prov-head">
+                <input
+                  type="checkbox"
+                  checked={server.enabled}
+                  onChange={(e) => updateMcp(server.id, { enabled: e.target.checked })}
+                />
+                <span className="prov-id">{server.id}</span>
+                <div style={{ flex: 1 }} />
+                <button className="btn btn-danger btn-small" onClick={() => update({ mcpServers: (config?.mcpServers ?? []).filter((item) => item.id !== server.id) })}>Remove</button>
+              </div>
+              <div className="field-grid">
+                <span className="field-label">command</span>
+                <input className="input" value={server.command} onChange={(e) => updateMcp(server.id, { command: e.target.value })} />
+                <span className="field-label">arguments</span>
+                <input className="input" value={server.args.join(" ")} onChange={(e) => updateMcp(server.id, { args: e.target.value.split(/\s+/).filter(Boolean) })} placeholder="space-separated" />
+                <span className="field-label">cwd</span>
+                <input className="input" value={server.cwd ?? ""} onChange={(e) => updateMcp(server.id, { cwd: e.target.value || undefined })} />
+              </div>
+            </div>
+          ))}
+          <button
+            className="btn btn-ghost btn-small"
+            onClick={() => config && update({
+              mcpServers: [...(config.mcpServers ?? []), {
+                id: `server_${Math.random().toString(36).slice(2, 7)}`,
+                command: "",
+                args: [],
+                enabled: true,
+              }],
+            })}
+          >
+            + Add MCP server
           </button>
         </div>
 

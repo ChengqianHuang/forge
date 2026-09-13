@@ -71,12 +71,15 @@ export class TaskEventStream {
       const length = size - this.offset;
       const buf = Buffer.alloc(length);
       await fh.read(buf, 0, length, this.offset);
-      this.offset = size;
 
       let text = buf.toString("utf8");
       const lastNewline = text.lastIndexOf("\n");
+      // Do not consume an unterminated JSONL record. The writer may still be
+      // appending it; advancing to `size` here would permanently discard the
+      // prefix and make the next drain start in the middle of JSON.
       if (lastNewline === -1) return;
       text = text.slice(0, lastNewline + 1);
+      this.offset += Buffer.byteLength(text, "utf8");
 
       for (const line of text.split("\n")) {
         if (!line.trim()) continue;

@@ -66,7 +66,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     //    `guard.json` (falls back to the built-in default) so "Always allow"
     //    rules added mid-session take effect immediately. Calling loadPolicy()
     //    with no argument would silently use the built-in default and ignore
-    //    the user's file — see docs/27.
+    //    the user's file.
     const decision = evaluateToolCall(loadPolicy(defaultPolicyPath()), toolName, input);
 
     if (decision.action === "deny") {

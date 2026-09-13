@@ -468,27 +468,30 @@ Small, obviously-green changes go directly to `master`.
 
 ---
 
-## 13. First Development Goal
+## 13. Platform Development Goal
 
-Prove: Pi agentLoop + Forge guardrails can complete a verified engineering task.
+Prove that a new Forge-owned capability can join a real session without
+duplicating Pi, adding product branches to the agent loop, weakening the
+safety floor or creating a second source of truth.
 
 Required flow:
 
 ```
 User goal
     ↓
-agentLoop(prompt, context, config with hooks)
+SessionManager activates session-scoped capabilities
     ↓
-LLM queries, calls tools, gets results
+Forge assembles AgentLoopConfig guardrails + capability contributions
     ↓
-shouldStopAfterTurn → verify completion
+Pi agentLoop queries the model and executes guarded tools
     ↓
-Session done (verified)
+ordered events → persistence → SSE → desktop projection
+    ↓
+model done is accepted; session settles and resources are disposed
 ```
 
-No UI. No memory. No multi-agent.
-
-Only prove the loop works and guardrails fire.
+Do not add a completion verifier. Do not add a second loop. Do not put
+removable product behavior in the kernel.
 
 ---
 

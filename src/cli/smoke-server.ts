@@ -62,7 +62,7 @@ async function main(): Promise<void> {
 
     // 2b. Project switch — POST /projects/select must really flip the active
     // project (the route used to not exist, the desktop swallowed the 404 and
-    // the picker silently reverted; docs/27 §5.4).
+    // the picker silently reverted.
     const proj2 = (await (
       await fetch(`${base}/projects`, {
         method: "POST",
@@ -99,6 +99,13 @@ async function main(): Promise<void> {
       body: JSON.stringify({}),
     });
     ok = ok && noFields.status === 400;
+
+    // 2e. Plugin capability discovery is a server-owned UI contract.
+    const pluginCaps = (await (
+      await fetch(`${base}/plugins/capabilities`, { headers: auth })
+    ).json()) as { slashCommands: Array<{ name: string }> };
+    const commandNames = pluginCaps.slashCommands.map((command) => command.name);
+    ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
 
     // 3. Create a session (202) — the agent fails fast against :9 and is aborted.
     const created = (await (
@@ -140,6 +147,16 @@ async function main(): Promise<void> {
     console.log(`  session status: ${session.status}, goal: ${session.goal}`);
     ok = ok && session.goal === "smoke session";
     ok = ok && typeof session.usage === "object";
+
+    // 4b. Slash commands use their own route and return plugin output instead
+    // of becoming a model prompt. /status also works after a fast failure.
+    const commandResponse = await fetch(`${base}/sessions/${sessionId}/commands`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ command: "/status" }),
+    });
+    const commandBody = await commandResponse.json() as { message?: string };
+    ok = ok && commandResponse.status === 200 && typeof commandBody.message === "string";
 
     // 5. SSE stream yields at least the created/started events.
     const controller = new AbortController();

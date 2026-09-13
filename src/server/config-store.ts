@@ -33,16 +33,29 @@ export type ProviderConfig = {
   baseUrl: string;
 };
 
+export type McpServerConfig = {
+  id: string;
+  name?: string;
+  command: string;
+  args: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  enabled: boolean;
+};
+
 export type ForgeConfig = {
   version: 2;
   providers: ProviderConfig[];
   defaultProviderId: string | null;
+  /** Optional for source compatibility; loadForgeConfig always materializes it. */
+  mcpServers?: McpServerConfig[];
 };
 
 const DEFAULT_CONFIG: ForgeConfig = {
   version: 2,
   providers: [],
   defaultProviderId: null,
+  mcpServers: [],
 };
 
 function newProviderId(): string {
@@ -83,6 +96,9 @@ export async function loadForgeConfig(forgeHome: string): Promise<ForgeConfig> {
         version: 2,
         providers,
         defaultProviderId: providers.some((p) => p.id === defaultId) ? defaultId : (providers[0]?.id ?? null),
+        mcpServers: Array.isArray(parsed.mcpServers)
+          ? parsed.mcpServers.map(validateMcpServer).filter((server): server is McpServerConfig => server !== null)
+          : [],
       };
     }
 
@@ -93,11 +109,34 @@ export async function loadForgeConfig(forgeHome: string): Promise<ForgeConfig> {
       version: 2,
       providers,
       defaultProviderId: legacy?.id ?? null,
+      mcpServers: [],
     };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return { ...DEFAULT_CONFIG };
     throw err;
   }
+}
+
+export function validateMcpServer(value: unknown): McpServerConfig | null {
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(obj.id)) return null;
+  if (typeof obj.command !== "string" || !obj.command.trim()) return null;
+  const args = Array.isArray(obj.args) && obj.args.every((arg) => typeof arg === "string")
+    ? obj.args as string[]
+    : [];
+  const env = obj.env && typeof obj.env === "object" && !Array.isArray(obj.env)
+    ? Object.fromEntries(Object.entries(obj.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+    : undefined;
+  return {
+    id: obj.id,
+    ...(typeof obj.name === "string" && obj.name ? { name: obj.name } : {}),
+    command: obj.command,
+    args,
+    ...(typeof obj.cwd === "string" && obj.cwd ? { cwd: obj.cwd } : {}),
+    ...(env ? { env } : {}),
+    enabled: obj.enabled !== false,
+  };
 }
 
 export async function saveForgeConfig(forgeHome: string, config: ForgeConfig): Promise<void> {

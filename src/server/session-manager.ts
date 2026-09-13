@@ -33,6 +33,9 @@ import type {
   ApprovalMode,
   ThinkingLevel,
 } from "../types.ts";
+import { UsageTracker } from "../guardrails/usage-tracker.ts";
+import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
+import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 
 /**
  * Everything that exists only while one run of a session is live. The
@@ -52,6 +55,8 @@ type SessionRuntime = {
   timedOut?: boolean;
   steeringQueue: AgentMessage[];
   usage: import("../guardrails/usage-tracker.ts").UsageTracker;
+  plugins: PluginHost;
+  forceCompaction: boolean;
   /**
    * The guardrails object handed to `runAgent` — kept live on the runtime so
    * `switchApprovalMode()` can mutate `guardrails.approvalMode` and the very
@@ -98,14 +103,18 @@ export class SessionManager {
    * read — a leak; it is gone with this shape.)
    */
   private runtimes = new Map<string, SessionRuntime>();
+  private readonly plugins: PluginRegistry;
 
   constructor(
     private readonly opts: {
       forgeHome: string;
       projects: ProjectsRegistry;
       approvalHub: ApprovalHub;
+      plugins?: PluginRegistry;
     },
-  ) {}
+  ) {
+    this.plugins = opts.plugins ?? createBuiltinPluginRegistry();
+  }
 
   async create(input: {
     goal: string;
@@ -153,14 +162,8 @@ export class SessionManager {
     await saveSession(session);
     await appendEvent(sessionId, "SESSION_CREATED", { goal: session.goal, workspace });
 
-    // 4. Guardrails + launch (launchAgent registers the runtime).
-    const usage = new (await import("../guardrails/usage-tracker.ts")).UsageTracker();
-    await this.launchAgent(
-      session,
-      subscription,
-      usage,
-      session.approvalMode,
-    );
+    // 4. Guardrails + plugins + launch (launchAgent registers the runtime).
+    await this.launchAgent(session, subscription, session.approvalMode);
 
     return { sessionId };
   }
@@ -172,9 +175,11 @@ export class SessionManager {
    * `session.cost.total`, and re-launches the agent loop on the recovered
    * session.
    *
-   * If `opts.message` is provided, it is appended to `session.messages` as a
-   * user turn AND pushed onto the steering queue — Pi's agentLoop consumes
-   * new messages from the messages array at the next turn boundary.
+   * If `opts.message` is provided, it has exactly one owner: completed-session
+   * follow-ups become the new run prompt; failed/cancelled-session guidance
+   * starts in the steering queue before the loop begins. It is never also
+   * inserted into recovered history, because `agentLoop` persists new prompts
+   * and steering messages in its result.
    *
    * Failure modes (caller maps to HTTP codes):
    *   - session not found        → throw "session {id} not found"
@@ -211,20 +216,15 @@ export class SessionManager {
     const { messages } = await replaySession(sessionId);
     session.messages = messages;
 
-    // 5. Optional steering message: append as a user turn AND queue it for
-    //    the next loop iteration. We do both so that:
-    //    - if the loop reads from messages directly, the new turn is there;
-    //    - if the loop drains the steering queue first, it's still there.
-    //    Idempotency: appendEvent once, push steeringQueue once.
-    if (opts?.message) {
-      const userTurn: AgentMessage = {
-        role: "user",
-        content: [{ type: "text", text: opts.message }],
-        timestamp: Date.now(),
-      } as AgentMessage;
-      session.messages.push(userTurn);
-      // steeringQueue is created fresh by launchAgent; we'll push after.
-    }
+    // 5. Prepare optional retry guidance without mutating recovered history.
+    //    Pi owns admission of new input and returns each admitted message once.
+    const retryGuidance: AgentMessage | undefined = opts?.message
+      ? {
+          role: "user",
+          content: [{ type: "text", text: opts.message }],
+          timestamp: Date.now(),
+        } as AgentMessage
+      : undefined;
 
     // 6. Update session state to running and persist.
     session.status = "running";
@@ -242,7 +242,7 @@ export class SessionManager {
       hasSteeringMessage: !!opts?.message,
     }).catch(() => {});
 
-    // 8. UsageTracker hydrates from persisted token counters.
+    // 8. Resolve the subscription. Usage hydration is owned by the Usage plugin.
     const cfg = await loadForgeConfig(this.opts.forgeHome);
     const subscription: ProviderConfig | null = resolveProvider(cfg, session.model.provider);
     if (!subscription) {
@@ -250,8 +250,6 @@ export class SessionManager {
         `no model subscription for provider "${session.model.provider}" — re-add it in Settings`,
       );
     }
-    const usage = new (await import("../guardrails/usage-tracker.ts")).UsageTracker();
-    usage.hydrate(session.usage);
 
     // 9. Launch (re-uses helper). Semantics by prior state:
     //   - failed/cancelled → retry: prompt = goal, message rides the
@@ -263,20 +261,10 @@ export class SessionManager {
     await this.launchAgent(
       session,
       subscription,
-      usage,
       session.approvalMode,
       wasCompleted ? opts?.message : undefined,
+      wasCompleted ? undefined : retryGuidance,
     );
-
-    // 10. Push steering message now that the runtime exists (retry path
-    // only — completed follow-ups ride as the prompt, see above).
-    if (opts?.message && !wasCompleted) {
-      this.runtimes.get(sessionId)?.steeringQueue.push({
-        role: "user",
-        content: [{ type: "text", text: opts.message }],
-        timestamp: Date.now(),
-      } as AgentMessage);
-    }
 
     return { sessionId };
   }
@@ -383,16 +371,35 @@ export class SessionManager {
   private async launchAgent(
     session: Session,
     subscription: ProviderConfig,
-    usage: import("../guardrails/usage-tracker.ts").UsageTracker,
     approvalMode: ApprovalMode,
     promptOverride?: string | undefined,
+    initialSteering?: AgentMessage | undefined,
   ): Promise<SessionRuntime> {
     const sessionId = session.id;
     // steeringQueue and guardrails are created BEFORE the runtime: the
     // guardrails object is stored ON the runtime, so switchApprovalMode can
     // mutate `runtime.guardrails.approvalMode` and the next tool call sees
     // the new posture without a relaunch.
-    const steeringQueue: AgentMessage[] = [];
+    // Seed retry guidance before runAgent starts. Pushing it after launch
+    // races Pi's initial getSteeringMessages() drain and can delay the
+    // correction until after an unwanted model turn.
+    const steeringQueue: AgentMessage[] = initialSteering ? [initialSteering] : [];
+    const controller = new AbortController();
+    let forceCompaction = false;
+    const plugins = await this.plugins.activate({
+      session,
+      signal: controller.signal,
+      emitEvent: (type, payload) => appendEvent(
+        sessionId,
+        type as Parameters<typeof appendEvent>[1],
+        payload,
+      ),
+      enqueueSteering: (message) => steeringQueue.push(message),
+      requestCompaction: () => { forceCompaction = true; },
+    });
+    // A missing/failed Usage plugin degrades to an inert tracker. The loop,
+    // compaction's per-turn signal and all safety hooks continue to work.
+    const usage = plugins.service<UsageTracker>("usage") ?? new UsageTracker();
     const guardrails: import("../guardrails/types.ts").GuardrailConfig = {
       sessionId,
       workspace: session.workspace,
@@ -405,11 +412,13 @@ export class SessionManager {
     };
     const runtime: SessionRuntime = {
       runPromise: Promise.resolve(session),
-      controller: new AbortController(),
+      controller,
       lastActivityAt: Date.now(),
       steeringQueue,
       guardrails,
       usage,
+      plugins,
+      forceCompaction,
       pendingModel: null,
       pendingThinking: null,
       stopRequested: false,
@@ -453,6 +462,13 @@ export class SessionManager {
         runtime.pendingThinking = null;
         return pending;
       },
+      takeCompactionRequest: () => {
+        const requested = forceCompaction || runtime.forceCompaction;
+        forceCompaction = false;
+        runtime.forceCompaction = false;
+        return requested;
+      },
+      plugins,
       onActivity: () => {
         runtime.lastActivityAt = Date.now();
       },
@@ -480,6 +496,7 @@ export class SessionManager {
           ...(stopped ? { reason: "stopped by user" } : { reason: session.failureReason }),
         }).catch(() => {});
         this.runtimes.delete(sessionId);
+        await plugins.dispose();
         throw err;
       });
 
@@ -500,12 +517,62 @@ export class SessionManager {
     return { ok: true, message: "queued" };
   }
 
+  /** Execute a registered slash command without sending it to the model. */
+  async command(sessionId: string, commandLine: string): Promise<{ ok: boolean; message: string }> {
+    const live = this.runtimes.get(sessionId);
+    if (live) {
+      const result = await live.plugins.execute(commandLine);
+      if (commandLine.trim().toLowerCase().startsWith("/compact")) live.forceCompaction = true;
+      return { ok: true, message: result.message };
+    }
+    const session = await loadSession(sessionId);
+    if (!session) throw new Error(`session ${sessionId} not found`);
+    const controller = new AbortController();
+    const host = await this.plugins.activate(
+      {
+        session,
+        signal: controller.signal,
+        emitEvent: (type, payload) => appendEvent(
+          sessionId,
+          type as Parameters<typeof appendEvent>[1],
+          payload,
+        ),
+        enqueueSteering: () => {},
+        requestCompaction: () => { throw new Error("/compact requires a running session"); },
+      },
+      { capabilities: new Set(["slash-command"]) },
+    );
+    try {
+      const result = await host.execute(commandLine);
+      return { ok: true, message: result.message };
+    } finally {
+      await host.dispose();
+    }
+  }
+
+  async setPluginEnabled(sessionId: string, pluginId: string, enabled: boolean): Promise<{ ok: boolean }> {
+    const runtime = this.runtimes.get(sessionId);
+    if (!runtime) throw new Error("session is not running");
+    await runtime.plugins.setEnabled(pluginId, enabled);
+    return { ok: true };
+  }
+
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return { ok: false, message: "session is not running" };
     runtime.stopRequested = true;
     runtime.controller.abort();
     return { ok: true, message: "aborting" };
+  }
+
+  /** Stop live runs and dispose session-scoped plugins during server shutdown. */
+  async shutdown(): Promise<void> {
+    const runtimes = [...this.runtimes.values()];
+    for (const runtime of runtimes) {
+      runtime.stopRequested = true;
+      runtime.controller.abort();
+    }
+    await Promise.allSettled(runtimes.map((runtime) => runtime.runPromise));
   }
 
   async get(sessionId: string): Promise<Session | null> {
@@ -551,6 +618,7 @@ export class SessionManager {
     // settled entries in an `idle` map that nothing ever read — a leak; gone.)
     const runtime = this.runtimes.get(sessionId);
     this.runtimes.delete(sessionId);
+    await runtime?.plugins.dispose();
     if (runtime?.timedOut && !final.failureReason) {
       final.failureReason = `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`;
     }

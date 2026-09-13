@@ -5,7 +5,7 @@
  * bash / delete / network / git / destructive. Each tool call is classified
  * into an ordered list of capabilities; rules match on (capability, optional
  * tool name, optional substring of the serialized args). First match wins;
- * otherwise the policy default applies. See docs/17-GUARD-POLICY.md.
+ * otherwise the policy default applies. See docs/GUARDRAILS.md.
  */
 
 import { readFileSync } from "node:fs";

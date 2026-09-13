@@ -1,4 +1,4 @@
-import { mkdir, readFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, appendFile, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { EventBus } from "../../events/event-bus.ts";
@@ -17,6 +17,7 @@ export type PersistedEventType =
   | "SESSION_CREATED"
   | "SESSION_STARTED"
   | "SESSION_RESUMED"
+  | "SESSION_HISTORY_IMPORTED"
   | "SESSION_ENDED"
   | "SESSION_FAILED"
   | "SESSION_CANCELLED"
@@ -51,14 +52,20 @@ export type PersistedEventType =
   | "COST_UPDATE"
   | "STUCK_WARNING"
   // Phase 3: tool-policy boundaries (added with the EventBus collapse — see
-  // docs/25 §6.2 phase 1). Payload shape:
+  // docs/GUARDRAILS.md). Payload shape:
   //   GUARD_BLOCKED            → { toolName: string, reason: string }
   //   GUARD_APPROVAL_REQUEST   → { requestId: string, toolName: string }
   | "GUARD_BLOCKED"
   | "GUARD_APPROVAL_REQUEST"
   // Phase 5: compaction
   | "COMPACTION"
-  | "COMPACTION_FAILED";
+  | "COMPACTION_FAILED"
+  // plugin platform lifecycle and UI output
+  | "PLUGIN_LOADED"
+  | "PLUGIN_DISABLED"
+  | "PLUGIN_FAILED"
+  | "SLASH_COMMAND_INVOKED"
+  | "PLUGIN_OUTPUT";
 
 export type PersistedEvent = {
   id: string;
@@ -129,6 +136,8 @@ function eventFile(sessionId: string): string {
  * promise resolves.
  */
 const appendQueues = new Map<string, Promise<unknown>>();
+/** Logs whose crash tail has been checked in this process. */
+const preparedLogs = new Set<string>();
 
 /**
  * Append a control- or data-plane event to the task's JSONL log, then
@@ -164,6 +173,10 @@ async function appendEventNow(
   bus: EventBus,
 ): Promise<PersistedEvent> {
   await mkdir(eventsDir(), { recursive: true });
+  if (!preparedLogs.has(sessionId)) {
+    await repairInterruptedTail(eventFile(sessionId));
+    preparedLogs.add(sessionId);
+  }
   const event: PersistedEvent = {
     id: randomUUID(),
     type,
@@ -171,7 +184,14 @@ async function appendEventNow(
     at: Date.now(),
     payload,
   };
-  await appendFile(eventFile(sessionId), JSON.stringify(event) + "\n", "utf8");
+  try {
+    await appendFile(eventFile(sessionId), JSON.stringify(event) + "\n", "utf8");
+  } catch (error) {
+    // A failed write may have left a partial record. Force the next append to
+    // inspect the tail again rather than concatenating another JSON object.
+    preparedLogs.delete(sessionId);
+    throw error;
+  }
 
   // Fan out to the control-plane bus (data-plane events stop at the log).
   // Bus publish errors are caught inside EventBus.publish — they cannot
@@ -186,10 +206,73 @@ async function appendEventNow(
 export async function readEvents(sessionId: string): Promise<readonly PersistedEvent[]> {
   try {
     const text = await readFile(eventFile(sessionId), "utf8");
-    const lines = text.split("\n").filter((l) => l.trim().length > 0);
-    return lines.map((l) => normalizeEvent(JSON.parse(l) as Record<string, unknown>));
+    const lines = text.split("\n");
+    const events: PersistedEvent[] = [];
+    for (const [index, line] of lines.entries()) {
+      if (!line.trim()) continue;
+      try {
+        events.push(normalizeEvent(JSON.parse(line) as Record<string, unknown>));
+      } catch (error) {
+        // A process loss can leave only the final record unfinished. Earlier
+        // corruption is not recoverable and must remain visible to callers.
+        const isInterruptedTail = index === lines.length - 1 && !text.endsWith("\n");
+        if (isInterruptedTail) break;
+        throw new Error(`invalid event log JSON at line ${index + 1}`, { cause: error });
+      }
+    }
+    return events;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
+  }
+}
+
+/**
+ * Make an existing JSONL tail safe for a new append after process loss.
+ * A complete final object only missing its newline is preserved; an invalid
+ * partial object is truncated back to the preceding newline. Middle records
+ * are deliberately untouched — silently repairing those would falsify the
+ * audit trail.
+ */
+async function repairInterruptedTail(path: string): Promise<void> {
+  let file;
+  try {
+    file = await open(path, "r+");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return;
+    const last = Buffer.alloc(1);
+    await file.read(last, 0, 1, size - 1);
+    if (last[0] === 0x0a) return;
+
+    const chunkSize = 64 * 1024;
+    let cursor = size;
+    let tailStart = 0;
+    while (cursor > 0) {
+      const start = Math.max(0, cursor - chunkSize);
+      const chunk = Buffer.alloc(cursor - start);
+      await file.read(chunk, 0, chunk.length, start);
+      const newline = chunk.lastIndexOf(0x0a);
+      if (newline >= 0) {
+        tailStart = start + newline + 1;
+        break;
+      }
+      cursor = start;
+    }
+
+    const tail = Buffer.alloc(size - tailStart);
+    await file.read(tail, 0, tail.length, tailStart);
+    try {
+      JSON.parse(tail.toString("utf8"));
+      await file.write("\n", size, "utf8");
+    } catch {
+      await file.truncate(tailStart);
+    }
+  } finally {
+    await file.close();
   }
 }

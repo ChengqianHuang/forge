@@ -1,0 +1,69 @@
+# Development
+
+## Before changing behavior
+
+Answer these questions in the change or its review:
+
+1. What user problem does this solve?
+2. Is it Forge guardrail/recovery/UI behavior or an existing Pi capability?
+3. Which Pi hook or internal contribution point owns it?
+4. What state enters and leaves the module?
+5. Which persisted events make the behavior observable?
+6. What automated check proves the path?
+
+Prefer small modules and pure guardrail functions. Do not create a second agent
+loop, duplicate Pi features or turn in-process types into versioned protocols.
+
+## Branches
+
+`master` must stay releasable. Cross-layer work and hook-contract changes use a
+short-lived `feat/...` or `fix/...` branch. Small, obviously green changes may
+land directly.
+
+## Required verification
+
+Run the release gate from the repository root:
+
+```bash
+bash scripts/release-check.sh
+```
+
+It covers server and desktop type checking, vendored Pi integrity, persistence,
+event ordering, guardrails, recovery, compaction, the internal registry, HTTP
+smokes and benchmark goldens.
+
+For desktop changes also build the production bundle:
+
+```bash
+npm --prefix desktop run build
+```
+
+Use the dev preview for visual review without launching Tauri:
+
+```bash
+cd desktop
+npm run dev
+# open /preview.html?scene=session&theme=dark
+```
+
+Available scenes are defined by `desktop/src/preview.tsx`; `hover=1` reveals
+hover-only controls.
+
+## Persistence changes
+
+Session JSON is a real disk boundary. Schema changes require a forward-only
+migration in `src/core/persistence/schema.ts`. Event JSONL readers must remain
+tolerant of already-written records.
+
+## Pi changes
+
+Edits under `pi/` affect Forge through workspace symlinks. Rebuild the changed
+Pi package so tracked `dist/` matches source, run that package's tests, then run
+the Forge release gate. Keep changes concentrated so upstream comparison stays
+affordable.
+
+## Documentation discipline
+
+Document shipped behavior in these files. Put explicit future work under a
+clearly labelled limitation; never leave retired architecture beside current
+architecture “for history.” Git already provides history.

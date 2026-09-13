@@ -443,11 +443,6 @@ body.preview-hover .session-del { display: inline-flex; }
 .notice-warn { border-left-color: color-mix(in srgb, var(--yellow) 70%, transparent); }
 .notice-warn .notice-icon { color: var(--yellow); }
 
-/* --- verification panel --- */
-.verify[data-state="pass"] { border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
-.verify[data-state="fail"] { border-color: color-mix(in srgb, var(--red) 35%, var(--border)); }
-.verify-row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; padding: 2px 0; }
-
 /* --- empty transcript --- */
 .empty-state {
   margin: 56px 0; text-align: center;
@@ -464,6 +459,7 @@ body.preview-hover .session-del { display: inline-flex; }
 }
 .conversation-composer { max-width: var(--canvas); margin: 0 auto; }
 .composer-box {
+  position: relative;
   border: 1px solid var(--border-strong); border-radius: 12px;
   background: var(--bg-secondary);
   padding: 8px 10px 7px 12px;
@@ -473,6 +469,44 @@ body.preview-hover .session-del { display: inline-flex; }
   border-color: color-mix(in srgb, var(--accent) 70%, var(--border-strong));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+.slash-item {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+.slash-item:hover { background: var(--bg-tertiary); }
+.slash-item span { color: var(--text-muted); font-size: 12px; }
+.settings-section-head { margin: 24px 0 10px; }
+.plugin-picker { position: relative; color: var(--text-muted); font-size: 12px; }
+.plugin-picker > summary { cursor: pointer; list-style: none; padding: 3px 7px; border-radius: var(--radius-sm); }
+.plugin-picker > summary:hover { color: var(--text); background: var(--bg); }
+.plugin-panel {
+  position: absolute; left: 0; bottom: calc(100% + 7px); z-index: 40;
+  min-width: 210px; padding: 6px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--bg-secondary);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26);
+}
+.plugin-option { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; color: var(--text-secondary); }
+.plugin-option:hover { background: var(--bg); color: var(--text); }
 .composer-ta {
   width: 100%; box-sizing: border-box;
   border: none; background: transparent; color: var(--text);
@@ -487,10 +521,7 @@ body.preview-hover .session-del { display: inline-flex; }
 .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 5px; }
 .composer-meta { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
 
-/* --- run-config picker: model subscription + completion verification ---
-   One trigger, one panel. Both settings answer "how should this session
-   run", both apply from the next turn boundary, so they share a control
-   instead of competing for space in the composer row. */
+/* --- run-config picker: subscription + reasoning + approval --- */
 .picker { position: relative; display: inline-flex; min-width: 0; }
 
 .picker-trigger {
@@ -513,7 +544,6 @@ body.preview-hover .session-del { display: inline-flex; }
   width: 3px; height: 3px; border-radius: 99px; flex-shrink: 0;
   background: currentColor; opacity: 0.42;
 }
-.picker-trust,
 .picker-thinking { color: var(--text-muted); flex-shrink: 0; }
 .picker-caret { display: inline-flex; color: var(--text-muted); transition: transform 0.15s ease; }
 .picker-caret.is-open { transform: rotate(180deg); }
@@ -521,8 +551,7 @@ body.preview-hover .session-del { display: inline-flex; }
 .picker-panel {
   position: absolute; z-index: 40;
   min-width: 262px; max-width: min(340px, 86vw);
-  /* Three groups now (model / verification / thinking) — cap the height so the
-     panel never runs off screen, and let it scroll instead. */
+  /* Cap the three run-config groups so the panel stays on screen. */
   max-height: min(78vh, 640px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -574,13 +603,6 @@ body.preview-hover .session-del { display: inline-flex; }
 .picker-option[data-active] .picker-option-label { font-weight: 650; }
 .picker-option-hint { font-size: 11px; line-height: 1.45; color: var(--text-muted); }
 
-/* Criteria entry, revealed only when verification is set to 严格. */
-  flex: 1; min-width: 110px;
-  padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg); color: var(--text);
-  font-family: var(--font-mono); font-size: 11.5px; outline: none;
-  transition: border-color 0.12s;
-}
 .meta-item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 .meta-warn { color: var(--yellow); }
 .meta-error {
@@ -685,4 +707,3 @@ body.preview-hover .session-del { display: inline-flex; }
   :root { --gutter: 20px; }
   .sidebar { width: 228px; }
 }
-

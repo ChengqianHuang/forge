@@ -1,5 +1,5 @@
 /**
- * Phase 6 benchmark CLI: run all golden tasks, print a ROADMAP §7 style
+ * Deterministic benchmark CLI: run all golden tasks and print a compact
  * report. Exit 1 if any task fails. No network access anywhere.
  */
 import { runGoldenTask } from "../benchmark/harness.ts";

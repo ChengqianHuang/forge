@@ -30,6 +30,7 @@ export interface Session {
   workspace: string;
   projectId: string | null;
   model: { provider: string; modelId: string };
+  /** Runtime projection of JSONL message history; never persisted in session JSON. */
   messages: AgentMessage[];
   status: SessionStatus;
   failureReason: string | null;
@@ -54,4 +55,3 @@ export interface SessionUsage {
   /** Latest assistant turn's context size — the compaction watermark. */
   lastContextTokens: number | null;
 }
-

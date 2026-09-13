@@ -1,7 +1,7 @@
 /**
  * Control-plane events: lifecycle + guardrail notifications.
  *
- * Architecture (see docs/25): these are the subset of `PersistedEventType`
+ * Architecture (see docs/ARCHITECTURE.md): these are the subset of `PersistedEventType`
  * that should fan out from the JSONL event log into the in-process
  * `EventBus`. Data-plane events (the TURN/MESSAGE/TEXT_DELTA/TOOL families)
  * stay in the log only — they are high-frequency and not actionable as
@@ -24,6 +24,7 @@ export const CONTROL_EVENT_TYPES = [
   "SESSION_CREATED",
   "SESSION_STARTED",
   "SESSION_RESUMED",
+  "SESSION_HISTORY_IMPORTED",
   "SESSION_ENDED",
   "SESSION_FAILED",
   "SESSION_CANCELLED",
@@ -38,6 +39,12 @@ export const CONTROL_EVENT_TYPES = [
   // compaction
   "COMPACTION",
   "COMPACTION_FAILED",
+  // plugin platform
+  "PLUGIN_LOADED",
+  "PLUGIN_DISABLED",
+  "PLUGIN_FAILED",
+  "SLASH_COMMAND_INVOKED",
+  "PLUGIN_OUTPUT",
 ] as const;
 
 export type ControlEventType = (typeof CONTROL_EVENT_TYPES)[number];
