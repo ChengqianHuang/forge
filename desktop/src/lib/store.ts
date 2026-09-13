@@ -316,7 +316,7 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
         id: `model-${stamp}`,
         tone: "info",
         icon: "⇄",
-        text: `Model switched to ${String(payload.modelId ?? "unknown")} — applies from the next turn.`,
+        text: `模型已切换为 ${String(payload.modelId ?? "unknown")} — 将在此会话后续的模型请求中使用；若当前任务在下一轮前结束，本次切换不会被使用。`,
       });
       return { conversation };
     }
