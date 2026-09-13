@@ -68,7 +68,10 @@ export class PluginRegistry {
     const slashCommands = plugins.flatMap((plugin) =>
       (plugin.slashCommands ?? []).map((command) => ({ ...command, pluginId: plugin.id })),
     );
-    return { plugins, slashCommands };
+    const uiContributions = plugins.flatMap((plugin) =>
+      (plugin.ui ?? []).map((contribution) => ({ ...contribution, pluginId: plugin.id })),
+    );
+    return { plugins, slashCommands, uiContributions };
   }
 
   async activate(
@@ -231,7 +234,10 @@ export class PluginHost {
     const slashCommands = plugins.flatMap((plugin) =>
       (plugin.slashCommands ?? []).map((command) => ({ ...command, pluginId: plugin.id })),
     );
-    return { plugins, slashCommands };
+    const uiContributions = plugins.flatMap((plugin) =>
+      (plugin.ui ?? []).map((contribution) => ({ ...contribution, pluginId: plugin.id })),
+    );
+    return { plugins, slashCommands, uiContributions };
   }
 
   tools(reservedNames: Iterable<string> = []): AgentTool<any>[] {

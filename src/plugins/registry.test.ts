@@ -21,6 +21,27 @@ function context(events: Array<{ type: string; payload: Record<string, unknown> 
 }
 
 describe("PluginRegistry", () => {
+  test("projects declared UI contributions without teaching the registry renderer semantics", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      manifest: {
+        id: "test.ui",
+        name: "ui",
+        version: "1",
+        capabilities: ["ui"],
+        ui: [{ id: "panel", label: "Panel", surface: "session-header", renderer: "test-panel" }],
+      },
+      activate: () => ({}),
+    });
+    assert.deepEqual(registry.capabilities().uiContributions, [{
+      id: "panel",
+      label: "Panel",
+      surface: "session-header",
+      renderer: "test-panel",
+      pluginId: "test.ui",
+    }]);
+  });
+
   test("rejects duplicate plugin ids", () => {
     const registry = new PluginRegistry();
     const plugin: ForgePlugin = {

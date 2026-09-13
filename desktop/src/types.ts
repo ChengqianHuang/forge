@@ -184,6 +184,26 @@ export interface ConversationView {
     failurePhase?: string;
     failureReason?: string;
   }>;
+  /** Latest WORKSPACE_CHANGES projection from the optional built-in plugin. */
+  workspaceChanges: WorkspaceChangesView | null;
+}
+
+export interface WorkspaceChangeView {
+  path: string;
+  previousPath?: string;
+  status: string;
+  additions: number | null;
+  deletions: number | null;
+  preexisting: boolean;
+  changedDuringSession: boolean;
+}
+
+export interface WorkspaceChangesView {
+  supported: boolean;
+  repoRoot: string | null;
+  phase: "baseline" | "current";
+  reason?: "not-git" | "git-error";
+  files: WorkspaceChangeView[];
 }
 
 export interface PluginCapabilitySnapshot {
@@ -198,6 +218,13 @@ export interface PluginCapabilitySnapshot {
     failureReason?: string;
   }>;
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
+  uiContributions?: Array<{
+    id: string;
+    label: string;
+    surface: "session-header";
+    renderer: string;
+    pluginId: string;
+  }>;
 }
 
 export interface ReliabilityMetrics {

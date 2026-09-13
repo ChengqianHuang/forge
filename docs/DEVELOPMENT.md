@@ -54,7 +54,7 @@ npm run dev
 
 Available scenes are defined by `desktop/src/preview.tsx`; `hover=1` reveals
 hover-only controls. `scene=reliability` opens the event-derived diagnostics
-modal with representative data.
+modal and `scene=changes` opens the registered workspace-change contribution.
 
 ## Persistence changes
 

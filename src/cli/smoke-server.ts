@@ -122,8 +122,16 @@ async function main(): Promise<void> {
     };
     const commandNames = pluginCaps.slashCommands.map((command) => command.name);
     const usage = pluginCaps.plugins.find((plugin) => plugin.id === "forge.usage");
+    const workspaceChanges = pluginCaps.plugins.find((plugin) => plugin.id === "forge.workspace-changes");
     ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
     ok = ok && usage?.required === true && ["active", "failed"].includes(usage.status);
+    ok = ok && workspaceChanges?.required === false;
+    const capsWithUi = pluginCaps as typeof pluginCaps & {
+      uiContributions?: Array<{ pluginId: string; renderer: string }>;
+    };
+    ok = ok && capsWithUi.uiContributions?.some((item) =>
+      item.pluginId === "forge.workspace-changes" && item.renderer === "workspace-changes"
+    ) === true;
 
     // 3.5 Approval-posture endpoint: invalid mode → 400, valid → 200 and
     //     persisted (a UI switch the server silently drops would be a lie).

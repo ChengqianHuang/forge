@@ -62,6 +62,12 @@ second deterministic completion judge.
   alternative source of truth.
 - Desktop store: a projection of server records and SSE events, not authority.
 
+Compiled-in UI capabilities cross the desktop/server boundary as small
+descriptors (`surface` + `renderer`), returned with the session capability
+snapshot. The desktop resolves renderer keys through one registry. This keeps
+feature-specific buttons out of `SessionView` while preserving a reviewed,
+first-party component set rather than allowing arbitrary remote UI code.
+
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
 second decision under its own guard id. The desktop audit panel folds those

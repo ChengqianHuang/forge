@@ -23,6 +23,10 @@ supports:
 - session-scoped services;
 - small capability descriptors consumed by the desktop.
 
+UI descriptors declare a stable contribution id, label, surface and renderer
+key. The desktop maps renderer keys through one compiled-in registry; session
+components do not contain branches for individual capability ids.
+
 Registration is explicit in `src/plugins/builtins/index.ts`. TypeScript is the
 contract; internal modules do not need compatibility or deprecation machinery.
 
@@ -89,6 +93,19 @@ session tracker and emits `USAGE_UPDATE` for the desktop token meter. It exposes
 the tracker as a session service used by compaction. If it is unavailable, the
 runner substitutes an inert tracker and continues.
 
+### Workspace changes
+
+The optional workspace-changes subscriber records a Git status baseline before
+the agent acts and emits `WORKSPACE_CHANGES` when the run ends. The snapshot
+lists current net changes, line counts and whether a dirty path existed before
+the session; it never attributes a preexisting edit to the agent.
+
+Its manifest registers a session-header UI contribution. The desktop renderer
+shows the latest persisted snapshot and remains available after the plugin's
+runtime resources are disposed. Non-Git workspaces emit an explicit unsupported
+state instead of failing the session. Git is invoked without a shell and only
+with read-only commands; full patches are not copied into the event log.
+
 ### MCP tools
 
 MCP is an integration transport, not an external Forge-plugin ecosystem.
@@ -116,6 +133,8 @@ restarts. Hot replacement is not implemented.
 
 The registry writes `PLUGIN_LOADED`, `PLUGIN_ENABLED`, `PLUGIN_DISABLED`,
 `PLUGIN_FAILED`, `SLASH_COMMAND_INVOKED` and `PLUGIN_OUTPUT` into the same event
-log as the agent. `PLUGIN_DISABLED` means a user pause; failure isolation has
-its own unambiguous `PLUGIN_FAILED` fact. The desktop never consumes a separate
-plugin event channel.
+log as the agent. Individual capabilities may add owned projection events such
+as `WORKSPACE_CHANGES`; they still use that one log and SSE path.
+`PLUGIN_DISABLED` means a user pause; failure isolation has its own unambiguous
+`PLUGIN_FAILED` fact. The desktop never consumes a separate plugin event
+channel.

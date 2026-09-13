@@ -72,7 +72,8 @@ export type PersistedEventType =
   | "PLUGIN_DISABLED"
   | "PLUGIN_FAILED"
   | "SLASH_COMMAND_INVOKED"
-  | "PLUGIN_OUTPUT";
+  | "PLUGIN_OUTPUT"
+  | "WORKSPACE_CHANGES";
 
 export type PersistedEvent = {
   id: string;

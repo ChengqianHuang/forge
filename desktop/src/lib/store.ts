@@ -63,6 +63,7 @@ const emptyConversation = (): ConversationView => ({
   modelId: null,
   thinkingLevel: null,
   pluginStates: {},
+  workspaceChanges: null,
 });
 
 let source: EventSource | null = null;
@@ -343,6 +344,33 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
         icon: "/",
         text: String(payload.message ?? ""),
       });
+      return { conversation };
+    }
+
+    case "WORKSPACE_CHANGES": {
+      const files = Array.isArray(payload.files)
+        ? payload.files.flatMap((value) => {
+            if (!value || typeof value !== "object") return [];
+            const file = value as Record<string, unknown>;
+            if (typeof file.path !== "string" || typeof file.status !== "string") return [];
+            return [{
+              path: file.path,
+              ...(typeof file.previousPath === "string" ? { previousPath: file.previousPath } : {}),
+              status: file.status,
+              additions: typeof file.additions === "number" ? file.additions : null,
+              deletions: typeof file.deletions === "number" ? file.deletions : null,
+              preexisting: file.preexisting === true,
+              changedDuringSession: file.changedDuringSession === true,
+            }];
+          })
+        : [];
+      conversation.workspaceChanges = {
+        supported: payload.supported === true,
+        repoRoot: typeof payload.repoRoot === "string" ? payload.repoRoot : null,
+        phase: payload.phase === "current" ? "current" : "baseline",
+        ...(payload.reason === "not-git" || payload.reason === "git-error" ? { reason: payload.reason } : {}),
+        files,
+      };
       return { conversation };
     }
 

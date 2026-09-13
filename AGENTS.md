@@ -328,6 +328,7 @@ Every guardrail must have a UI entry point.
 | Context compaction | In-place notice on COMPACTION |
 | Session management | SessionList + StatusBar |
 | Harness reliability | Session header 诊断 button + event-derived diagnostics modal |
+| Workspace changes | Registered session-header contribution + Git change modal |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |
 | Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |
@@ -381,7 +382,7 @@ To see the UI without launching the app, use the dev-only harness
 
 ```
 cd desktop && npm run dev
-# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker|reliability>&theme=<dark|light>
+# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker|reliability|changes>&theme=<dark|light>
 # add &hover=1 to reveal hover-only affordances (a screenshot cannot hover)
 ```
 

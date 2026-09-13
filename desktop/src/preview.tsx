@@ -6,7 +6,7 @@
  * plain browser without the Tauri sidecar.
  * Open /preview.html?scene=<name>&theme=<dark|light>
  *
- * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | reliability
+ * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | reliability | changes
  *
  * `replay` folds captured real session frames through the real reducer;
  * `notify` additionally patches document.hidden and window.Notification and
@@ -23,6 +23,7 @@ import { Composer } from "./components/Composer.tsx";
 import { ModelPicker } from "./components/ModelPicker.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
 import { ReliabilityDialog } from "./components/ReliabilityDialog.tsx";
+import { WorkspaceChangesDialog } from "./components/WorkspaceChangesDialog.tsx";
 import { REPLAY } from "./__replay.ts";
 import type { EventEnvelope, TimelineEntry } from "./types.ts";
 import "./styles.css";
@@ -213,7 +214,7 @@ store.setState({
   connected: true,
   theme,
   conversation:
-    scene === "session"
+    scene === "session" || scene === "changes"
       ? {
           timeline,
           guardDecisions: [
@@ -248,6 +249,16 @@ store.setState({
           modelId: null,
           thinkingLevel: null,
           pluginStates: {},
+          workspaceChanges: {
+            supported: true,
+            repoRoot: "/Users/hcq/demo",
+            phase: "current",
+            files: [
+              { path: "src/cli/args.ts", status: " M", additions: 5, deletions: 1, preexisting: false, changedDuringSession: true },
+              { path: "src/cli/print.ts", status: " M", additions: 3, deletions: 2, preexisting: true, changedDuringSession: true },
+              { path: "test/json.test.ts", status: "??", additions: null, deletions: null, preexisting: false, changedDuringSession: true },
+            ],
+          },
         }
       : scene === "replay"
         ? replayConversation()
@@ -264,6 +275,7 @@ store.setState({
               modelId: null,
               thinkingLevel: null,
               pluginStates: {},
+              workspaceChanges: null,
             }
           : {
               timeline: [],
@@ -274,6 +286,7 @@ store.setState({
               modelId: null,
               thinkingLevel: null,
               pluginStates: {},
+              workspaceChanges: null,
             },
 });
 
@@ -432,6 +445,12 @@ createRoot(document.getElementById("root")!).render(
           plugins: { failures: 1 },
           integrity: { healthy: true, violations: [] },
         }}
+      />
+    )}
+    {scene === "changes" && store.getState().conversation.workspaceChanges && (
+      <WorkspaceChangesDialog
+        changes={store.getState().conversation.workspaceChanges!}
+        onClose={() => {}}
       />
     )}
   </>,

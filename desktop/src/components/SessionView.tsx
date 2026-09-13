@@ -4,6 +4,7 @@ import { useModelCatalog } from "../lib/catalog.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { ReliabilityDialog } from "./ReliabilityDialog.tsx";
+import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
 import type {
   ApprovalMode,
   GuardDecisionView,
@@ -340,6 +341,7 @@ export function SessionView({
           <h1 className="session-goal" title={goal}>{goal}</h1>
           <TokenMeter usage={conversation.usage} contextWindow={contextWindow} />
           <div className="head-actions">
+            <SessionCapabilityActions capabilities={pluginCapabilities} conversation={conversation} />
             <button
               className="btn btn-ghost btn-small"
               onClick={() => void openReliability()}
@@ -404,6 +406,7 @@ export function SessionView({
           onClose={() => setReliabilityOpen(false)}
         />
       )}
+
 
       {resumeOpen && (
         <div

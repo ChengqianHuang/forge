@@ -80,6 +80,7 @@ test("isControlEvent recognizes control-plane types", () => {
     "TOOL_CALL",
     "TOOL_UPDATE",
     "TOOL_RESULT",
+    "WORKSPACE_CHANGES",
   ];
   for (const t of controlTypes) assert.equal(isControlEvent(t), true, `control: ${t}`);
   for (const t of dataTypes) assert.equal(isControlEvent(t), false, `data: ${t}`);

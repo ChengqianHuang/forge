@@ -21,6 +21,16 @@ export interface PluginManifest {
   required?: boolean;
   capabilities: PluginCapability[];
   slashCommands?: Array<{ name: string; description: string }>;
+  ui?: PluginUiContribution[];
+}
+
+/** Compiled-in desktop contribution. The server declares placement and a
+ * stable renderer key; the desktop owns the matching React implementation. */
+export interface PluginUiContribution {
+  id: string;
+  label: string;
+  surface: "session-header";
+  renderer: string;
 }
 
 export interface PluginSessionContext {
@@ -80,4 +90,5 @@ export interface PluginRuntimeDescriptor extends PluginManifest {
 export interface PluginCapabilitySnapshot {
   plugins: PluginRuntimeDescriptor[];
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
+  uiContributions?: Array<PluginUiContribution & { pluginId: string }>;
 }
