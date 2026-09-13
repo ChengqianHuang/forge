@@ -1,4 +1,16 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+
+/**
+ * Inactivity watchdog: a run whose agent produces no persisted event for
+ * this long is considered hung (a provider call that never returns pins the
+ * session in "running" forever otherwise — observed in real-bench). Any
+ * activity (delta, tool call, message end) refreshes the clock, so long
+ * legitimate turns are never killed.
+ */
+/** Read lazily so tests/smokes can inject a short timeout via env. */
+function idleTimeoutMs(): number {
+  return Number(process.env.FORGE_IDLE_TIMEOUT_MS ?? 5 * 60_000);
+}
 import type { Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { runAgent } from "../agent-runner.ts";
@@ -32,6 +44,12 @@ import type {
 type SessionRuntime = {
   runPromise: Promise<Session>;
   controller: AbortController;
+  /** Watchdog: last agent activity (any persisted event), refreshed by runAgent. */
+  lastActivityAt: number;
+  /** Fired when the inactivity watchdog trips; cleared on settle. */
+  watchdog?: ReturnType<typeof setInterval> | undefined;
+  /** True when the watchdog (not the user) aborted the run. */
+  timedOut?: boolean;
   steeringQueue: AgentMessage[];
   usage: import("../guardrails/usage-tracker.ts").UsageTracker;
   /**
@@ -388,6 +406,7 @@ export class SessionManager {
     const runtime: SessionRuntime = {
       runPromise: Promise.resolve(session),
       controller: new AbortController(),
+      lastActivityAt: Date.now(),
       steeringQueue,
       guardrails,
       usage,
@@ -399,6 +418,20 @@ export class SessionManager {
     // with the first turn find the runtime. settle()/the catch handler remove
     // it — exactly one removal per registration, no leak.
     this.runtimes.set(sessionId, runtime);
+
+    // Inactivity watchdog: a hung provider call produces no events, so the
+    // clock runs out and we abort the run; the catch handler below records
+    // it as a timeout failure (with a resume hint), not a user cancellation.
+    runtime.watchdog = setInterval(() => {
+      if (Date.now() - runtime.lastActivityAt > idleTimeoutMs()) {
+        runtime.timedOut = true;
+        runtime.stopRequested = false;
+        runtime.controller.abort();
+        this.clearWatchdog(runtime);
+      }
+    }, 30_000);
+    // Never keep the process alive for the watchdog alone.
+    runtime.watchdog.unref();
 
     const runPromise = runAgent({
       session,
@@ -420,15 +453,27 @@ export class SessionManager {
         runtime.pendingThinking = null;
         return pending;
       },
+      onActivity: () => {
+        runtime.lastActivityAt = Date.now();
+      },
     })
       .then(async (final) => {
+        this.clearWatchdog(runtime);
         await this.settle(sessionId, final);
         return final;
       })
       .catch(async (err) => {
-        const stopped = runtime.stopRequested;
+        this.clearWatchdog(runtime);
+        const timedOut = runtime.timedOut;
+        const stopped = runtime.stopRequested && !timedOut;
         session.status = stopped ? "cancelled" : "failed";
-        session.failureReason = stopped ? null : err instanceof Error ? err.message : String(err);
+        session.failureReason = stopped
+          ? null
+          : timedOut
+            ? `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`
+            : err instanceof Error
+              ? err.message
+              : String(err);
         session.updatedAt = Date.now();
         await saveSession(session);
         await appendEvent(sessionId, stopped ? "SESSION_CANCELLED" : "SESSION_FAILED", {
@@ -492,6 +537,13 @@ export class SessionManager {
     return { ok: this.opts.approvalHub.mark(requestId, "denied") };
   }
 
+  private clearWatchdog(runtime: SessionRuntime): void {
+    if (runtime.watchdog) {
+      clearInterval(runtime.watchdog);
+      runtime.watchdog = undefined;
+    }
+  }
+
   private async settle(sessionId: string, final: Session): Promise<void> {
     // The runtime dies with the run: one removal drops the controller,
     // steering queue, cost guard, live completion config and any pending
@@ -499,7 +551,10 @@ export class SessionManager {
     // settled entries in an `idle` map that nothing ever read — a leak; gone.)
     const runtime = this.runtimes.get(sessionId);
     this.runtimes.delete(sessionId);
-    const status: SessionStatus = runtime?.stopRequested
+    if (runtime?.timedOut && !final.failureReason) {
+      final.failureReason = `idle timeout after ${Math.round(idleTimeoutMs() / 60_000 * 10) / 10}min with no agent activity — the provider call likely hung; resume to retry`;
+    }
+    const status: SessionStatus = runtime?.stopRequested && !runtime?.timedOut
       ? "cancelled"
       : final.failureReason ? "failed" : "completed";
     final.status = status;

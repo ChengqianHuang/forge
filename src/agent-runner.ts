@@ -62,6 +62,9 @@ export async function runAgent(opts: {
   /** Mid-session thinking switch: called at each turn boundary; a non-null
    *  return replaces the loop's reasoning level from that turn on. */
   takeThinkingSwitch?: (() => ThinkingLevel | null) | undefined;
+  /** Called on every persisted agent event — the inactivity watchdog's
+   *  progress signal. Absent in tests that don't care. */
+  onActivity?: (() => void) | undefined;
 }): Promise<Session> {
   const {
     session,
@@ -73,6 +76,7 @@ export async function runAgent(opts: {
     takeModelSwitch,
     thinkingLevel,
     takeThinkingSwitch,
+    onActivity,
   } = opts;
 
   const tools = createCodingTools(session.workspace) ?? [];
@@ -141,6 +145,7 @@ export async function runAgent(opts: {
     const mapped = mapAgentEventToPersisted(event);
     if (mapped) {
       await appendEvent(session.id, mapped.type, mapped.payload);
+      onActivity?.();
     }
     // Usage tracking from assistant usage (authoritative per-message totals).
     if (event.type === "message_end" && guardrails) {
