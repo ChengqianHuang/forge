@@ -215,11 +215,38 @@ store.setState({
     scene === "session"
       ? {
           timeline,
+          guardDecisions: [
+            {
+              decisionId: "audit-1:forge.core", guardId: "forge.core",
+              toolCallId: "audit-1", toolName: "read", capability: "read",
+              policyAction: "allow", effectiveAction: "allow", outcome: "allowed",
+              basis: "policy", approvalMode: "default", ruleId: "read-allow",
+              reason: "forge-guard: allow by rule read-allow (read)",
+              inputSummary: '{"path":"src/cli/args.ts"}', at: Date.now() - 18_000,
+            },
+            {
+              decisionId: "audit-2:forge.core", guardId: "forge.core",
+              toolCallId: "audit-2", toolName: "bash", capability: "network",
+              policyAction: "ask", effectiveAction: "ask", outcome: "approved",
+              basis: "user", approvalMode: "default", ruleId: "network-ask",
+              reason: "forge-guard: ask by rule network-ask (bash)",
+              inputSummary: '{"command":"curl https://example.com"}', at: Date.now() - 9_000,
+            },
+            {
+              decisionId: "audit-3:forge.core", guardId: "forge.core",
+              toolCallId: "audit-3", toolName: "bash", capability: "destructive",
+              policyAction: "deny", effectiveAction: "deny", outcome: "denied",
+              basis: "policy", approvalMode: "always", ruleId: "destructive-deny",
+              reason: "forge-guard: deny by rule destructive-deny (bash)",
+              inputSummary: '{"command":"sudo whoami"}', at: Date.now() - 3_000,
+            },
+          ],
           usage: { tokensIn: 4200, tokensOut: 900, contextTokens: 45000 },
           providerId: "prov_primary",
           approvalMode: "default",
           modelId: null,
           thinkingLevel: null,
+          pluginStates: {},
         }
       : scene === "replay"
         ? replayConversation()
@@ -229,19 +256,23 @@ store.setState({
                 { kind: "user", id: "u1", text: "Add a --json flag to the CLI and cover it with tests" },
                 { kind: "assistant", id: "a1", text: "", streaming: true, thinking: true },
               ] as TimelineEntry[],
+              guardDecisions: [],
               usage: { tokensIn: 300, tokensOut: 60, contextTokens: 12000 },
               providerId: "prov_primary",
           approvalMode: "default",
               modelId: null,
               thinkingLevel: null,
+              pluginStates: {},
             }
           : {
               timeline: [],
+              guardDecisions: [],
               usage: { tokensIn: 0, tokensOut: 0, contextTokens: null },
               providerId: null,
               approvalMode: null,
               modelId: null,
               thinkingLevel: null,
+              pluginStates: {},
             },
 });
 

@@ -78,7 +78,11 @@ describe("session metadata and event-owned history", () => {
     assert.deepEqual(second?.messages.map(textOf), ["legacy one", "legacy two"]);
     const events = await readEvents(id);
     assert.equal(events.filter((event) => event.type === "SESSION_HISTORY_IMPORTED").length, 1);
-    assert.equal(events.filter((event) => event.type === "MESSAGE_ENDED").length, 2);
+    assert.equal(events.filter((event) => event.type === "MESSAGE_ENDED").length, 0);
+    assert.deepEqual(
+      events.find((event) => event.type === "SESSION_HISTORY_IMPORTED")?.payload.contextMessages,
+      legacy.messages,
+    );
 
     await saveSession(first!);
     const raw = JSON.parse(await readFile(join(paths.sessions, `${id}.json`), "utf8")) as Record<string, unknown>;

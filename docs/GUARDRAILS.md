@@ -26,6 +26,18 @@ Every tool call is classified and produces decision evidence. Built-in reads
 are allowed. Writes and edits are journalled before execution. Bash, git,
 network and unknown tools follow policy rules and the session approval posture.
 
+`GUARD_DECISION` is the durable audit fact for a guard's decision on a call. It
+records a stable decision id and guard id, the tool-call id, classified
+capability, matched rule, original policy action, effective action after the
+approval posture, outcome, basis and a bounded input summary. Outcomes are
+`allowed`, `approved`, `rejected`, `denied` or `aborted`. A contributed guard
+that blocks after the core guard allowed writes its own attributed decision;
+the audit UI must not misrepresent the earlier core decision as the whole
+pipeline's conclusion.
+`GUARD_APPROVAL_REQUEST` remains the real-time prompt signal and
+`GUARD_BLOCKED` remains the explicit policy-block marker; neither substitutes
+for the final decision record.
+
 Approval modes:
 
 - `ask`: ask for every policy-classified mutation.
@@ -34,6 +46,10 @@ Approval modes:
 
 The destructive deny floor applies in every mode. Unknown tools—including MCP
 tools without a specific allow rule—default to asking.
+
+The desktop Guard audit panel is a projection of these persisted decisions. It
+does not re-evaluate old tool calls against today's policy, because that would
+rewrite history rather than inspect it.
 
 ## Stuck detection
 
@@ -58,3 +74,10 @@ that produces no activity for the configured interval.
 Usage is telemetry, not a budget. The built-in usage capability records
 cumulative input/output/cache tokens and the latest context watermark. Provider
 spend limits remain the provider's responsibility.
+
+## Compaction durability
+
+Compaction changes the context seen by the model, so it is a recovery fact, not
+just a UI notice. Every successful `COMPACTION` event stores the complete
+post-compaction message context. Event replay replaces prior history at that
+boundary and continues with later completed messages.

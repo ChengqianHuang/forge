@@ -10,6 +10,7 @@ import type {
   Session,
   ThinkingLevel,
   ApprovalMode,
+  GuardDecisionView,
 } from "../types.ts";
 
 export interface DesktopState {
@@ -55,11 +56,13 @@ export interface DesktopState {
 
 const emptyConversation = (): ConversationView => ({
   timeline: [],
+  guardDecisions: [],
   usage: { tokensIn: 0, tokensOut: 0, contextTokens: null },
   providerId: null,
   approvalMode: null,
   modelId: null,
   thinkingLevel: null,
+  pluginStates: {},
 });
 
 let source: EventSource | null = null;
@@ -211,6 +214,29 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return { conversation };
     }
 
+    case "SESSION_HISTORY_IMPORTED": {
+      const messages = Array.isArray(payload.contextMessages) ? payload.contextMessages : [];
+      for (const message of messages) {
+        const { role, text, stamp: key } = readMessage(message);
+        if (role === "user") {
+          conversation.timeline = upsert(conversation.timeline, {
+            kind: "user",
+            id: `m${key}`,
+            text,
+          });
+        } else if (role === "assistant") {
+          conversation.timeline = upsert(conversation.timeline, {
+            kind: "assistant",
+            id: `m${key}`,
+            text,
+            streaming: false,
+            thinking: false,
+          });
+        }
+      }
+      return { conversation };
+    }
+
     // Reasoning-only update: surface that the model is working before any
     // text arrives, instead of leaving an empty bubble on screen.
     case "MESSAGE_UPDATED": {
@@ -320,13 +346,42 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
       return { conversation };
     }
 
+    case "PLUGIN_LOADED":
+    case "PLUGIN_ENABLED":
+    case "PLUGIN_DISABLED": {
+      const pluginId = String(payload.pluginId ?? "");
+      if (!pluginId) return {};
+      if (
+        env.type === "PLUGIN_DISABLED" &&
+        payload.reason !== "disabled by user" &&
+        conversation.pluginStates[pluginId]?.status === "failed"
+      ) return {};
+      const status = env.type === "PLUGIN_DISABLED" || payload.status === "disabled"
+        ? "disabled"
+        : "active";
+      conversation.pluginStates = {
+        ...conversation.pluginStates,
+        [pluginId]: { status },
+      };
+      return { conversation };
+    }
+
     case "PLUGIN_FAILED": {
+      const pluginId = String(payload.pluginId ?? "unknown");
+      conversation.pluginStates = {
+        ...conversation.pluginStates,
+        [pluginId]: {
+          status: "failed",
+          failurePhase: String(payload.phase ?? "unknown"),
+          failureReason: String(payload.reason ?? "unknown error"),
+        },
+      };
       conversation.timeline = upsert(conversation.timeline, {
         kind: "notice",
         id: `plugin-failed-${stamp}`,
         tone: "warn",
         icon: "⚠",
-        text: `插件 ${String(payload.pluginId ?? "unknown")} 已隔离：${String(payload.reason ?? "unknown error")}`,
+        text: `插件 ${pluginId} 已隔离：${String(payload.reason ?? "unknown error")}`,
       });
       return { conversation };
     }
@@ -412,6 +467,37 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
     case "GUARD_APPROVAL_REQUEST": {
       void pollApprovals();
       return {};
+    }
+
+    case "GUARD_DECISION": {
+      const toolCallId = String(payload.toolCallId ?? "");
+      const outcome = String(payload.outcome ?? "");
+      if (!toolCallId || !["allowed", "approved", "rejected", "denied", "aborted"].includes(outcome)) {
+        return {};
+      }
+      const decision: GuardDecisionView = {
+        decisionId: String(payload.decisionId ?? `${toolCallId}:${payload.guardId ?? "forge.core"}`),
+        guardId: String(payload.guardId ?? "forge.core"),
+        toolCallId,
+        toolName: String(payload.toolName ?? "unknown"),
+        capability: String(payload.capability ?? "unknown"),
+        policyAction: (payload.policyAction === "allow" || payload.policyAction === "deny" ? payload.policyAction : "ask"),
+        effectiveAction: (payload.effectiveAction === "allow" || payload.effectiveAction === "deny" ? payload.effectiveAction : "ask"),
+        outcome: outcome as GuardDecisionView["outcome"],
+        basis: (["policy", "approval-mode", "safe-readonly", "user", "plugin"].includes(String(payload.basis))
+          ? payload.basis
+          : "policy") as GuardDecisionView["basis"],
+        approvalMode: (payload.approvalMode === "ask" || payload.approvalMode === "always" ? payload.approvalMode : "default"),
+        ruleId: typeof payload.ruleId === "string" ? payload.ruleId : null,
+        reason: String(payload.reason ?? ""),
+        inputSummary: String(payload.inputSummary ?? ""),
+        at: Number(env.at ?? env.timestamp ?? Date.now()),
+      };
+      const existing = conversation.guardDecisions.findIndex((item) => item.decisionId === decision.decisionId);
+      conversation.guardDecisions = existing < 0
+        ? [...conversation.guardDecisions, decision]
+        : conversation.guardDecisions.map((item, index) => index === existing ? decision : item);
+      return { conversation };
     }
 
     // Terminal session events all refresh persisted state and approvals.

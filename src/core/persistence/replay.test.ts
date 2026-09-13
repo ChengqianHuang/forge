@@ -148,6 +148,24 @@ describe("replaySession", () => {
     assert.equal(textOf(r.messages[0]), "halfway done");
   });
 
+  test("treats a legacy import as one atomic history replacement", async () => {
+    await freshSession();
+    await appendEvent(sessionId, "SESSION_HISTORY_IMPORTED", {
+      source: "legacy-session-json",
+      messageCount: 2,
+      contextMessages: [userMsg("legacy question"), assistantMsg("legacy answer")],
+    });
+    await appendEvent(sessionId, "MESSAGE_ENDED", { message: userMsg("follow-up") });
+
+    const r = await replaySession(sessionId);
+    assert.deepEqual(r.messages.map(textOf), [
+      "legacy question",
+      "legacy answer",
+      "follow-up",
+    ]);
+    assert.equal(r.hasMessageEvents, true);
+  });
+
   test("replaces model history at a durable compaction boundary", async () => {
     await freshSession();
     for (const text of ["old-1", "old-2", "retained"]) {

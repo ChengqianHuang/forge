@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { makeBeforeToolCall } from "./before-tool-call.ts";
 import { UsageTracker } from "./usage-tracker.ts";
 import { ApprovalHub } from "../server/approval-hub.ts";
+import { readEvents } from "../core/persistence/event-log.ts";
 import type { GuardrailConfig } from "./types.ts";
 import type { Session } from "../types.ts";
 
@@ -58,11 +59,13 @@ function config(undoRoot: string): GuardrailConfig {
 before(() => {
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(WS, { recursive: true });
+  process.env.FORGE_EVENTS_DIR = join(TMP, "events");
 });
 
 after(() => {
   rmSync(TMP, { recursive: true, force: true });
   delete process.env.FORGE_GUARD_POLICY;
+  delete process.env.FORGE_EVENTS_DIR;
 });
 
 /** Parse the journal JSONL written by the hook (journal.ts no longer exports a reader). */
@@ -216,6 +219,48 @@ describe("beforeToolCall → approval key alignment", () => {
     hub.mark("call-key-2", "denied");
     const result = await pendingCall;
     assert.ok(result && result.block === true, "denied → blocked");
+  });
+});
+
+describe("beforeToolCall → durable decision evidence", () => {
+  test("records final outcomes for automatic allow, policy deny and user rejection", async () => {
+    const base = config(join(TMP, "undo-evidence"));
+    const allowHook = makeBeforeToolCall(base);
+    await allowHook({
+      toolCall: { name: "bash", id: "evidence-allow" },
+      args: { command: "git status" },
+    } as never);
+
+    await allowHook({
+      toolCall: { name: "bash", id: "evidence-deny" },
+      args: { command: "sudo whoami" },
+    } as never);
+
+    const rejectHook = makeBeforeToolCall({
+      ...base,
+      approval: { request: async () => false },
+    });
+    await rejectHook({
+      toolCall: { name: "bash", id: "evidence-reject" },
+      args: { command: "curl https://example.com" },
+    } as never);
+
+    const decisions = (await readEvents(base.sessionId))
+      .filter((event) => event.type === "GUARD_DECISION")
+      .filter((event) => String(event.payload.toolCallId).startsWith("evidence-"));
+    assert.deepEqual(
+      decisions.map((event) => ({
+        id: event.payload.toolCallId,
+        outcome: event.payload.outcome,
+        capability: event.payload.capability,
+        ruleId: event.payload.ruleId,
+      })),
+      [
+        { id: "evidence-allow", outcome: "allowed", capability: "git", ruleId: "git-read-status" },
+        { id: "evidence-deny", outcome: "denied", capability: "destructive", ruleId: "destructive-deny" },
+        { id: "evidence-reject", outcome: "rejected", capability: "network", ruleId: "network-ask" },
+      ],
+    );
   });
 });
 

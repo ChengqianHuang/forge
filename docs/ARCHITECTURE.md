@@ -54,11 +54,19 @@ second deterministic completion judge.
 - `SessionManager`: live run ownership, model/thinking switches, steering,
   watchdog, Stop and settlement.
 - Pi context: in-memory transcript and active tool/model state during a run.
-- Session JSON: recoverable session metadata and the last persisted counters.
-- Event JSONL: authoritative ordered history for replay, SSE and audit.
+- Session JSON: recoverable metadata and counters only. It never stores the
+  model transcript.
+- Event JSONL: authoritative ordered model history for recovery, plus SSE and
+  audit evidence. `Session.messages` is only its live Pi-facing projection.
 - EventBus: low-volume control-event fan-out after persistence; never an
   alternative source of truth.
 - Desktop store: a projection of server records and SSE events, not authority.
+
+Guard decisions follow the same rule. The core hook writes an attributed
+`GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
+second decision under its own guard id. The desktop audit panel folds those
+events by stable decision id. Reconnect replay is idempotent and never invokes
+the policy evaluator again.
 
 The JSONL append path checks an existing crash tail before the first write in
 each process. A complete final record missing only its newline is preserved;
@@ -67,11 +75,23 @@ Readers may ignore only that unterminated tail — corruption in the middle of a
 log remains a hard error. The SSE follower advances its byte offset only past
 complete lines, so observing an in-progress append cannot drop an event.
 
+Schema v9 moves legacy snapshot messages into JSONL on first load. The import
+is serialized per session and commits the whole transcript in one
+`SESSION_HISTORY_IMPORTED` replacement event before a later save removes the
+old JSON field. The event is data-plane because its payload may be large.
+Concurrent list/get calls cannot import the same history twice, and a crash
+cannot leave a partially imported transcript that looks complete.
+
 ## Context management
 
 Pi compaction in `prepareNextTurn` is the primary mechanism. Provider-reported
 per-turn usage decides when to compact. `transformContext` is a coarse
 last-resort bound based on estimated size.
+
+A successful `COMPACTION` event carries the complete post-compaction model
+context. Recovery folds that event as a replacement boundary, then appends
+later completed messages. Without this durable replacement, a resumed run
+would silently restore the pre-compaction context.
 
 Model and reasoning-effort switches are drained before the compaction threshold
 check so they work at every turn boundary. `/compact` sets a one-shot explicit
@@ -79,7 +99,11 @@ request for the next boundary.
 
 ## Recovery
 
-The event log reconstructs coherent messages after a crash. Session state is
-then relaunched through the same runner and guardrails. File before-images under
-the Forge home directory are internal insurance; they are not represented as a
-complete user-facing Undo feature.
+The event log reconstructs coherent messages after a crash, ignoring a message
+that never reached its terminal event. Session metadata supplies the selected
+model, reasoning effort, approval posture, workspace, status and usage counters;
+the reconstructed projection is then relaunched through the same runner and
+guardrails. Running configuration changes mutate that single live Session
+object, so terminal settlement cannot overwrite a user's change with an older
+snapshot. File before-images under the Forge home directory are internal
+insurance; they are not represented as a complete user-facing Undo feature.

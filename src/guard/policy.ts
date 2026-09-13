@@ -45,6 +45,7 @@ export type GuardPolicy = {
 
 export type DecisionOutcome = {
   action: Decision;
+  capability: Capability;
   reason: string;
   ruleId?: string;
   terminate?: boolean;
@@ -292,6 +293,7 @@ export function evaluateToolCall(
     if (rule) {
       const outcome: DecisionOutcome = {
         action: rule.decision,
+        capability: cap,
         reason: describe(rule, toolName),
       };
       if (rule.id) outcome.ruleId = rule.id;
@@ -300,7 +302,11 @@ export function evaluateToolCall(
     }
   }
 
-  return { action: policy.default, reason: `no rule matched (capability: ${caps[0] ?? "unknown"}); policy default` };
+  return {
+    action: policy.default,
+    capability: caps[0] ?? "unknown",
+    reason: `no rule matched (capability: ${caps[0] ?? "unknown"}); policy default`,
+  };
 }
 
 function describe(rule: GuardRule, toolName: string): string {

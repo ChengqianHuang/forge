@@ -1,4 +1,9 @@
-import type { AgentLoopConfig, AgentLoopTurnUpdate } from "@earendil-works/pi-agent-core";
+import type {
+  AgentLoopConfig,
+  AgentLoopTurnUpdate,
+  BeforeToolCallContext,
+  BeforeToolCallResult,
+} from "@earendil-works/pi-agent-core";
 import type { PluginHooks } from "./types.ts";
 
 type HookOwner = { id: string; hooks: PluginHooks };
@@ -13,6 +18,11 @@ export function multiplexHooks(
   plugins: HookOwner[],
   onPluginError: (pluginId: string, hook: keyof PluginHooks, error: unknown) => Promise<void>,
   isPluginEnabled: (pluginId: string) => boolean = () => true,
+  onPluginBlock?: (
+    pluginId: string,
+    context: BeforeToolCallContext,
+    decision: BeforeToolCallResult,
+  ) => Promise<void>,
 ): PluginHooks {
   const active = new Set(plugins.map((plugin) => plugin.id));
   const available = (name: keyof PluginHooks) =>
@@ -35,7 +45,10 @@ export function multiplexHooks(
       for (const owner of available("beforeToolCall")) {
         try {
           const decision = await owner.hooks.beforeToolCall!(context, signal);
-          if (decision?.block) return decision;
+          if (decision?.block) {
+            await onPluginBlock?.(owner.id, context, decision);
+            return decision;
+          }
         } catch (error) {
           await failed(owner, "beforeToolCall", error);
         }

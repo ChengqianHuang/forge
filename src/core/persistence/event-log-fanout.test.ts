@@ -59,13 +59,16 @@ test("isControlEvent recognizes control-plane types", () => {
     "APPROVAL_MODE_CHANGED",
     "COST_UPDATE",
     "STUCK_WARNING",
+    "GUARD_DECISION",
     "GUARD_BLOCKED",
     "GUARD_APPROVAL_REQUEST",
     "SESSION_STARTED",
     "COMPACTION",
     "COMPACTION_FAILED",
+    "PLUGIN_ENABLED",
   ];
   const dataTypes: PersistedEventType[] = [
+    "SESSION_HISTORY_IMPORTED",
     "TURN_STARTED",
     "TURN_ENDED",
     "MESSAGE_STARTED",

@@ -26,3 +26,20 @@ test("plugin hook failure is isolated and disabled", async () => {
   assert.equal(await hooks.shouldStopAfterTurn!({} as never), false);
   assert.equal(failures, 1);
 });
+
+test("a plugin guard block produces attributed decision evidence", async () => {
+  const blocks: Array<{ id: string; reason: string | undefined }> = [];
+  const hooks = multiplexHooks(
+    { beforeToolCall: async () => undefined },
+    [{ id: "policy.extra", hooks: { beforeToolCall: async () => ({ block: true, reason: "workspace rule" }) } }],
+    async () => {},
+    () => true,
+    async (id, _context, decision) => { blocks.push({ id, reason: decision.reason }); },
+  );
+  const result = await hooks.beforeToolCall!({
+    toolCall: { id: "call-1", name: "bash" },
+    args: { command: "echo hi" },
+  } as never);
+  assert.equal(result?.block, true);
+  assert.deepEqual(blocks, [{ id: "policy.extra", reason: "workspace rule" }]);
+});

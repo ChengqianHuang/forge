@@ -83,8 +83,8 @@ export async function executeSlashCommand(id: string, command: string): Promise<
   await send(`/sessions/${id}/commands`, "POST", { command });
 }
 
-export async function fetchPluginCapabilities(): Promise<PluginCapabilitySnapshot> {
-  return getJson("/plugins/capabilities");
+export async function fetchPluginCapabilities(id: string): Promise<PluginCapabilitySnapshot> {
+  return getJson(`/sessions/${id}/capabilities`);
 }
 
 export async function setSessionPluginEnabled(id: string, pluginId: string, enabled: boolean): Promise<void> {

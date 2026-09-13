@@ -57,6 +57,7 @@ check "model discovery tests" "cd $ROOT && node --import tsx --test src/server/m
 check "stuck-detector tests" "cd $ROOT && node --import tsx --test src/guardrails/stuck-detector.test.ts"
 check "usage tracker tests"     "cd $ROOT && node --import tsx --test src/guardrails/usage-tracker.test.ts"
 check "protocol consistency"   "cd $ROOT && node --import tsx --test tests/protocol-consistency.test.ts"
+check "guard audit projection" "cd $ROOT && node --import tsx --test tests/guard-audit-projection.test.ts"
 check "compaction tests"     "cd $ROOT && node --import tsx --test src/guardrails/compaction.test.ts"
 check "plugin platform tests" "cd $ROOT && node --import tsx --test src/plugins/*.test.ts src/plugins/builtins/*.test.ts"
 

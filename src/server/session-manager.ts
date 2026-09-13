@@ -14,7 +14,7 @@ function idleTimeoutMs(): number {
 import type { Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
 import { runAgent } from "../agent-runner.ts";
-import { appendEvent } from "../core/persistence/event-log.ts";
+import { appendEvent, readEvents } from "../core/persistence/event-log.ts";
 import { replaySession } from "../core/persistence/replay.ts";
 import {
   saveSession,
@@ -35,6 +35,8 @@ import type {
 } from "../types.ts";
 import { UsageTracker } from "../guardrails/usage-tracker.ts";
 import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
+import type { PluginCapabilitySnapshot } from "../plugins/types.ts";
+import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 
 /**
@@ -47,6 +49,8 @@ import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 type SessionRuntime = {
   runPromise: Promise<Session>;
   controller: AbortController;
+  /** The one live mutable Session object; terminal persistence uses this object. */
+  session: Session;
   /** Watchdog: last agent activity (any persisted event), refreshed by runAgent. */
   lastActivityAt: number;
   /** Fired when the inactivity watchdog trips; cleared on settle. */
@@ -288,10 +292,14 @@ export class SessionManager {
     const runtime = this.runtimes.get(sessionId);
     if (runtime) {
       runtime.pendingModel = buildModel(subscription);
+      runtime.session.model = { provider: subscription.id, modelId: subscription.modelId };
+      runtime.session.updatedAt = Date.now();
+      await saveSession(runtime.session);
     } else {
       const session = await loadSession(sessionId);
       if (!session) throw new Error(`session ${sessionId} not found`);
       session.model = { provider: subscription.id, modelId: subscription.modelId };
+      session.updatedAt = Date.now();
       await saveSession(session);
     }
 
@@ -317,16 +325,16 @@ export class SessionManager {
     sessionId: string,
     thinkingLevel: ThinkingLevel,
   ): Promise<{ thinkingLevel: ThinkingLevel }> {
-    const session = await loadSession(sessionId);
+    const runtime = this.runtimes.get(sessionId);
+    const session = runtime?.session ?? await loadSession(sessionId);
     if (!session) throw new Error(`session ${sessionId} not found`);
-
     session.thinkingLevel = thinkingLevel;
     session.updatedAt = Date.now();
     await saveSession(session);
 
-    // The running loop holds its own session object — the persisted write
-    // above does not reach it — so hand the level through the pending slot.
-    const runtime = this.runtimes.get(sessionId);
+    // The pending slot changes Pi at the next turn boundary; mutating the
+    // runtime-owned Session ensures terminal persistence cannot restore the
+    // previous level over the user's choice.
     if (runtime) runtime.pendingThinking = thinkingLevel;
 
     await appendEvent(sessionId, "THINKING_CHANGED", { thinkingLevel }).catch(() => {});
@@ -344,14 +352,13 @@ export class SessionManager {
     sessionId: string,
     approvalMode: ApprovalMode,
   ): Promise<{ approvalMode: ApprovalMode }> {
-    const session = await loadSession(sessionId);
+    const runtime = this.runtimes.get(sessionId);
+    const session = runtime?.session ?? await loadSession(sessionId);
     if (!session) throw new Error(`session ${sessionId} not found`);
-
     session.approvalMode = approvalMode;
     session.updatedAt = Date.now();
     await saveSession(session);
 
-    const runtime = this.runtimes.get(sessionId);
     if (runtime) runtime.guardrails.approvalMode = approvalMode;
 
     await appendEvent(sessionId, "APPROVAL_MODE_CHANGED", { approvalMode }).catch(() => {});
@@ -386,6 +393,7 @@ export class SessionManager {
     const steeringQueue: AgentMessage[] = initialSteering ? [initialSteering] : [];
     const controller = new AbortController();
     let forceCompaction = false;
+    const disabledPluginIds = userDisabledPluginIds(await readEvents(sessionId));
     const plugins = await this.plugins.activate({
       session,
       signal: controller.signal,
@@ -396,7 +404,7 @@ export class SessionManager {
       ),
       enqueueSteering: (message) => steeringQueue.push(message),
       requestCompaction: () => { forceCompaction = true; },
-    });
+    }, { disabledPluginIds });
     // A missing/failed Usage plugin degrades to an inert tracker. The loop,
     // compaction's per-turn signal and all safety hooks continue to work.
     const usage = plugins.service<UsageTracker>("usage") ?? new UsageTracker();
@@ -413,6 +421,7 @@ export class SessionManager {
     const runtime: SessionRuntime = {
       runPromise: Promise.resolve(session),
       controller,
+      session,
       lastActivityAt: Date.now(),
       steeringQueue,
       guardrails,
@@ -528,6 +537,7 @@ export class SessionManager {
     const session = await loadSession(sessionId);
     if (!session) throw new Error(`session ${sessionId} not found`);
     const controller = new AbortController();
+    const disabledPluginIds = userDisabledPluginIds(await readEvents(sessionId));
     const host = await this.plugins.activate(
       {
         session,
@@ -540,7 +550,7 @@ export class SessionManager {
         enqueueSteering: () => {},
         requestCompaction: () => { throw new Error("/compact requires a running session"); },
       },
-      { capabilities: new Set(["slash-command"]) },
+      { capabilities: new Set(["slash-command"]), disabledPluginIds },
     );
     try {
       const result = await host.execute(commandLine);
@@ -555,6 +565,14 @@ export class SessionManager {
     if (!runtime) throw new Error("session is not running");
     await runtime.plugins.setEnabled(pluginId, enabled);
     return { ok: true };
+  }
+
+  async pluginCapabilities(sessionId: string): Promise<PluginCapabilitySnapshot> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) return runtime.plugins.capabilities();
+    const session = await loadSession(sessionId);
+    if (!session) throw new Error(`session ${sessionId} not found`);
+    return projectPluginCapabilities(this.plugins.capabilities(), await readEvents(sessionId));
   }
 
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {

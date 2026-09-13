@@ -187,13 +187,12 @@ If those answers are unclear, the feature is not ready to enter the kernel.
 ## Near-term direction
 
 The next phase should deepen the platform through real Forge capabilities,
-not expand the abstraction surface in advance:
+not expand the abstraction surface in advance. Registry lifecycle and
+session-scoped capability status and guard-decision inspection are now
+established; the remaining direction is:
 
-1. Stabilize the registry and lifecycle using first-party session features.
-2. Make capability status, failure and output legible in the desktop timeline.
-3. Strengthen cancellation, process cleanup and crash-resume behavior.
-4. Improve inspection of the event and guard-decision history through the UI.
-5. Add measurements and regression benchmarks for harness reliability, while
+1. Strengthen cancellation, process cleanup and crash-resume behavior.
+2. Add measurements and regression benchmarks for harness reliability, while
    leaving model-quality judgment to real task evaluation.
 
 This section states direction, not shipped behavior. Current implementation
@@ -211,4 +210,3 @@ Forge is behaving as a platform when:
 - a crashed session retains enough durable state to resume honestly;
 - every user-relevant mechanism is operable from the desktop;
 - the release gate protects both Forge and the vendored Pi runtime.
-

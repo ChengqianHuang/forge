@@ -100,13 +100,6 @@ async function main(): Promise<void> {
     });
     ok = ok && noFields.status === 400;
 
-    // 2e. Plugin capability discovery is a server-owned UI contract.
-    const pluginCaps = (await (
-      await fetch(`${base}/plugins/capabilities`, { headers: auth })
-    ).json()) as { slashCommands: Array<{ name: string }> };
-    const commandNames = pluginCaps.slashCommands.map((command) => command.name);
-    ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
-
     // 3. Create a session (202) — the agent fails fast against :9 and is aborted.
     const created = (await (
       await fetch(`${base}/sessions`, {
@@ -118,6 +111,19 @@ async function main(): Promise<void> {
     const sessionId = created.sessionId as string;
     console.log(`  session created: ${sessionId}`);
     ok = ok && typeof sessionId === "string";
+
+    // 3a. Capability discovery is session-scoped and distinguishes required
+    // substrate from optional product behavior.
+    const pluginCaps = (await (
+      await fetch(`${base}/sessions/${sessionId}/capabilities`, { headers: auth })
+    ).json()) as {
+      plugins: Array<{ id: string; required: boolean; status: string }>;
+      slashCommands: Array<{ name: string }>;
+    };
+    const commandNames = pluginCaps.slashCommands.map((command) => command.name);
+    const usage = pluginCaps.plugins.find((plugin) => plugin.id === "forge.usage");
+    ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
+    ok = ok && usage?.required === true && ["active", "failed"].includes(usage.status);
 
     // 3.5 Approval-posture endpoint: invalid mode → 400, valid → 200 and
     //     persisted (a UI switch the server silently drops would be a lie).

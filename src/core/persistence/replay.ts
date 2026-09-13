@@ -36,6 +36,14 @@ export async function replaySession(sessionId: string): Promise<ReplayResult> {
   let messages: AgentMessage[] = [];
   let hasMessageEvents = false;
   for (const ev of events) {
+    if (
+      ev.type === "SESSION_HISTORY_IMPORTED" &&
+      Array.isArray(ev.payload.contextMessages)
+    ) {
+      messages = [...ev.payload.contextMessages] as AgentMessage[];
+      hasMessageEvents = true;
+      continue;
+    }
     if (ev.type === "MESSAGE_STARTED" || ev.type === "MESSAGE_ENDED") {
       hasMessageEvents = true;
     }

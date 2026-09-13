@@ -17,6 +17,8 @@ export interface PluginManifest {
   id: string;
   name: string;
   version: string;
+  /** Required capabilities are session substrate and cannot be paused. */
+  required?: boolean;
   capabilities: PluginCapability[];
   slashCommands?: Array<{ name: string; description: string }>;
 }
@@ -66,7 +68,16 @@ export interface ForgePlugin {
   activate: (context: PluginSessionContext) => Promise<PluginInstance> | PluginInstance;
 }
 
+export type PluginRuntimeStatus = "active" | "disabled" | "failed" | "disposed";
+
+export interface PluginRuntimeDescriptor extends PluginManifest {
+  required: boolean;
+  status: PluginRuntimeStatus;
+  failurePhase?: string;
+  failureReason?: string;
+}
+
 export interface PluginCapabilitySnapshot {
-  plugins: Array<PluginManifest & { enabled: boolean }>;
+  plugins: PluginRuntimeDescriptor[];
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
 }

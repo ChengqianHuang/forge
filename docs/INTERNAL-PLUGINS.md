@@ -26,6 +26,12 @@ supports:
 Registration is explicit in `src/plugins/builtins/index.ts`. TypeScript is the
 contract; internal modules do not need compatibility or deprecation machinery.
 
+Every manifest is either required or optional. Required means “not user
+disableable”, not “incapable of failure”: Forge still reports and isolates a
+failed required capability instead of concealing it. The usage meter is
+required because context tracking and compaction depend on it. Session commands
+and MCP adapters are optional product behavior.
+
 ## Lifecycle
 
 ```
@@ -42,6 +48,11 @@ Duplicate ids, slash commands and plugin tool names are rejected. Built-in Pi
 tool names are reserved. Async activation, hook and event-subscriber failures
 are caught, recorded and isolated to that capability in that session.
 
+Each live host exposes `active`, `disabled`, `failed` or `disposed` for every
+capability. `GET /sessions/:id/capabilities` returns that session-owned
+snapshot; the desktop also folds `PLUGIN_*` events so reconnects and failures
+do not leave a stale checkbox behind.
+
 Activation is transactional at the capability boundary: if contribution
 validation fails after resources were acquired, the partial instance is
 disposed. Runtime failure disables and disposes the instance, and it cannot be
@@ -49,6 +60,11 @@ re-enabled within that session. A user-requested disable is a reversible pause:
 already-composed tools and hooks consult the live state, while resources remain
 owned until re-enable or session disposal. Final disposal runs once in reverse
 activation order.
+
+Only an explicit user disable is restored on resume. A runtime failure is not a
+permanent preference: the next run creates a fresh instance and may recover.
+Required capabilities ignore historical disable choices written before the
+required boundary existed.
 
 This is cooperative in-process isolation, not a security sandbox. Forge-owned
 plugins are trusted code. A CPU-blocking module can still block the monolith;
@@ -96,6 +112,8 @@ restarts. Hot replacement is not implemented.
 
 ## Events
 
-The registry writes `PLUGIN_LOADED`, `PLUGIN_DISABLED`, `PLUGIN_FAILED`,
-`SLASH_COMMAND_INVOKED` and `PLUGIN_OUTPUT` into the same event log as the
-agent. The desktop never consumes a separate plugin event channel.
+The registry writes `PLUGIN_LOADED`, `PLUGIN_ENABLED`, `PLUGIN_DISABLED`,
+`PLUGIN_FAILED`, `SLASH_COMMAND_INVOKED` and `PLUGIN_OUTPUT` into the same event
+log as the agent. `PLUGIN_DISABLED` means a user pause; failure isolation has
+its own unambiguous `PLUGIN_FAILED` fact. The desktop never consumes a separate
+plugin event channel.

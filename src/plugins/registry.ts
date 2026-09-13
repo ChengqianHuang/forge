@@ -5,11 +5,21 @@ import type {
   PluginCapabilitySnapshot,
   PluginHooks,
   PluginInstance,
+  PluginManifest,
+  PluginRuntimeDescriptor,
+  PluginRuntimeStatus,
   PluginSessionContext,
   SlashCommandResult,
 } from "./types.ts";
 
 const DEFAULT_PLUGIN_TIMEOUT_MS = 5_000;
+
+type PluginState = {
+  manifest: PluginManifest;
+  status: PluginRuntimeStatus;
+  failurePhase?: string;
+  failureReason?: string;
+};
 
 async function within<T>(
   promise: Promise<T>,
@@ -37,6 +47,8 @@ async function within<T>(
 export class PluginRegistry {
   private readonly plugins = new Map<string, ForgePlugin>();
 
+  constructor(private readonly timeoutMs = DEFAULT_PLUGIN_TIMEOUT_MS) {}
+
   register(plugin: ForgePlugin): void {
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(plugin.manifest.id)) {
       throw new Error(`invalid plugin id: ${plugin.manifest.id}`);
@@ -47,8 +59,12 @@ export class PluginRegistry {
     this.plugins.set(plugin.manifest.id, plugin);
   }
 
-  capabilities(): PluginCapabilitySnapshot {
-    const plugins = [...this.plugins.values()].map((plugin) => ({ ...plugin.manifest, enabled: true }));
+  capabilities(status: PluginRuntimeStatus = "disposed"): PluginCapabilitySnapshot {
+    const plugins = [...this.plugins.values()].map((plugin) => ({
+      ...plugin.manifest,
+      required: plugin.manifest.required === true,
+      status,
+    }));
     const slashCommands = plugins.flatMap((plugin) =>
       (plugin.slashCommands ?? []).map((command) => ({ ...command, pluginId: plugin.id })),
     );
@@ -57,9 +73,13 @@ export class PluginRegistry {
 
   async activate(
     context: PluginSessionContext,
-    options?: { capabilities?: ReadonlySet<string> },
+    options?: {
+      capabilities?: ReadonlySet<string>;
+      disabledPluginIds?: ReadonlySet<string>;
+    },
   ): Promise<PluginHost> {
     const instances = new Map<string, PluginInstance>();
+    const states = new Map<string, PluginState>();
     const commandOwners = new Map<string, string>();
     const toolOwners = new Map<string, string>();
 
@@ -68,18 +88,31 @@ export class PluginRegistry {
         options?.capabilities &&
         !plugin.manifest.capabilities.some((capability) => options.capabilities!.has(capability))
       ) continue;
+      const initiallyDisabled =
+        plugin.manifest.required !== true &&
+        options?.disabledPluginIds?.has(plugin.manifest.id) === true;
+      states.set(plugin.manifest.id, {
+        manifest: plugin.manifest,
+        status: initiallyDisabled ? "disabled" : "active",
+      });
       let instance: PluginInstance | undefined;
+      let activationTimedOut = false;
+      let activation: Promise<PluginInstance> | undefined;
       try {
         const timeoutController = new AbortController();
         const pluginContext = {
           ...context,
           signal: AbortSignal.any([context.signal, timeoutController.signal]),
         };
+        activation = Promise.resolve(plugin.activate(pluginContext));
         instance = await within(
-          Promise.resolve(plugin.activate(pluginContext)),
-          DEFAULT_PLUGIN_TIMEOUT_MS,
+          activation,
+          this.timeoutMs,
           `${plugin.manifest.id}.activate`,
-          () => timeoutController.abort(new Error(`${plugin.manifest.id}.activate timed out`)),
+          () => {
+            activationTimedOut = true;
+            timeoutController.abort(new Error(`${plugin.manifest.id}.activate timed out`));
+          },
         );
         for (const command of instance.slashCommands ?? []) {
           if (commandOwners.has(command.name)) {
@@ -98,15 +131,28 @@ export class PluginRegistry {
           toolOwners.set(tool.name, plugin.manifest.id);
         }
         instances.set(plugin.manifest.id, instance);
-        await context.emitEvent("PLUGIN_LOADED", { pluginId: plugin.manifest.id, version: plugin.manifest.version });
+        await context.emitEvent("PLUGIN_LOADED", {
+          pluginId: plugin.manifest.id,
+          version: plugin.manifest.version,
+          status: initiallyDisabled ? "disabled" : "active",
+          required: plugin.manifest.required === true,
+        });
       } catch (error) {
+        const state = states.get(plugin.manifest.id)!;
+        state.status = "failed";
+        state.failurePhase = "activate";
+        state.failureReason = error instanceof Error ? error.message : String(error);
         // Activation is transactional at the plugin boundary. A plugin may
         // acquire resources before its contributions are validated (for
         // example, an MCP child process before a tool-name conflict is
         // discovered), so roll the partial instance back before continuing.
         if (instance?.dispose) {
           try {
-            await instance.dispose();
+            await within(
+              Promise.resolve(instance.dispose()),
+              this.timeoutMs,
+              `${plugin.manifest.id}.activation-rollback`,
+            );
           } catch (disposeError) {
             await context.emitEvent("PLUGIN_FAILED", {
               pluginId: plugin.manifest.id,
@@ -115,6 +161,33 @@ export class PluginRegistry {
             }).catch(() => {});
           }
         }
+        instances.delete(plugin.manifest.id);
+        for (const [name, owner] of commandOwners) {
+          if (owner === plugin.manifest.id) commandOwners.delete(name);
+        }
+        for (const [name, owner] of toolOwners) {
+          if (owner === plugin.manifest.id) toolOwners.delete(name);
+        }
+        // Promise.race cannot cancel trusted in-process code. If activation
+        // ignores the abort and resolves after the timeout, immediately
+        // reclaim that late instance instead of leaking its resources.
+        if (activationTimedOut && activation) {
+          void activation.then(async (lateInstance) => {
+            try {
+              await within(
+                Promise.resolve(lateInstance.dispose?.()),
+                this.timeoutMs,
+                `${plugin.manifest.id}.late-activation-dispose`,
+              );
+            } catch (lateError) {
+              await context.emitEvent("PLUGIN_FAILED", {
+                pluginId: plugin.manifest.id,
+                phase: "late-activation-dispose",
+                reason: lateError instanceof Error ? lateError.message : String(lateError),
+              }).catch(() => {});
+            }
+          }).catch(() => {});
+        }
         await context.emitEvent("PLUGIN_FAILED", {
           pluginId: plugin.manifest.id,
           phase: "activate",
@@ -122,7 +195,7 @@ export class PluginRegistry {
         });
       }
     }
-    return new PluginHost(context, instances);
+    return new PluginHost(context, instances, states, this.timeoutMs);
   }
 }
 
@@ -135,12 +208,36 @@ export class PluginHost {
   constructor(
     private readonly context: PluginSessionContext,
     private readonly instances: Map<string, PluginInstance>,
-  ) {}
+    private readonly states: Map<string, PluginState>,
+    private readonly timeoutMs = DEFAULT_PLUGIN_TIMEOUT_MS,
+  ) {
+    for (const [id, state] of states) {
+      if (state.status === "disabled") this.disabled.add(id);
+      if (state.status === "failed") {
+        this.disabled.add(id);
+        this.failed.add(id);
+      }
+    }
+  }
+
+  capabilities(): PluginCapabilitySnapshot {
+    const plugins: PluginRuntimeDescriptor[] = [...this.states.values()].map((state) => ({
+      ...state.manifest,
+      required: state.manifest.required === true,
+      status: state.status,
+      ...(state.failurePhase ? { failurePhase: state.failurePhase } : {}),
+      ...(state.failureReason ? { failureReason: state.failureReason } : {}),
+    }));
+    const slashCommands = plugins.flatMap((plugin) =>
+      (plugin.slashCommands ?? []).map((command) => ({ ...command, pluginId: plugin.id })),
+    );
+    return { plugins, slashCommands };
+  }
 
   tools(reservedNames: Iterable<string> = []): AgentTool<any>[] {
     const reserved = new Set(reservedNames);
     return [...this.instances.entries()].flatMap(([id, instance]) =>
-      this.disabled.has(id) ? [] : (instance.tools ?? [])
+      (instance.tools ?? [])
         .filter((tool) => !reserved.has(tool.name))
         .map((tool) => ({
           ...tool,
@@ -163,13 +260,30 @@ export class PluginHost {
 
   hooks(core: PluginHooks): PluginHooks {
     const owners = [...this.instances.entries()]
-      .filter(([id, instance]) => !this.disabled.has(id) && instance.hooks)
+      .filter(([, instance]) => instance.hooks)
       .map(([id, instance]) => ({ id, hooks: instance.hooks! }));
     return multiplexHooks(
       core,
       owners,
       (id, hook, error) => this.disable(id, String(hook), error),
       (id) => !this.disposed && !this.disabled.has(id),
+      async (id, context, decision) => {
+        await this.context.emitEvent("GUARD_DECISION", {
+          decisionId: `${context.toolCall.id}:${id}`,
+          guardId: id,
+          toolCallId: context.toolCall.id,
+          toolName: context.toolCall.name,
+          capability: "plugin",
+          policyAction: "deny",
+          effectiveAction: "deny",
+          outcome: "denied",
+          basis: "plugin",
+          approvalMode: this.context.session.approvalMode,
+          ruleId: id,
+          reason: decision.reason ?? `blocked by ${id}`,
+          inputSummary: "",
+        }).catch(() => {});
+      },
     );
   }
 
@@ -177,7 +291,7 @@ export class PluginHost {
     for (const [id, instance] of this.instances) {
       if (this.disabled.has(id) || !instance.onAgentEvent) continue;
       try {
-        await within(Promise.resolve(instance.onAgentEvent(event)), DEFAULT_PLUGIN_TIMEOUT_MS, `${id}.onAgentEvent`);
+        await within(Promise.resolve(instance.onAgentEvent(event)), this.timeoutMs, `${id}.onAgentEvent`);
       } catch (error) {
         await this.disable(id, "onAgentEvent", error);
       }
@@ -196,7 +310,7 @@ export class PluginHost {
       try {
         const result = await within(
           Promise.resolve(command.execute(args, this.context)),
-          DEFAULT_PLUGIN_TIMEOUT_MS,
+          this.timeoutMs,
           `${id}/${name}`,
         );
         await this.context.emitEvent("SLASH_COMMAND_INVOKED", { pluginId: id, command: name, args });
@@ -223,20 +337,29 @@ export class PluginHost {
     // already torn down after a runtime failure.
     for (const [id, instance] of [...this.instances.entries()].reverse()) {
       await this.disposeInstance(id, instance, "dispose");
+      const state = this.states.get(id);
+      if (state && state.status !== "failed") state.status = "disposed";
     }
   }
 
   async setEnabled(pluginId: string, enabled: boolean): Promise<void> {
     if (this.disposed) throw new Error("plugin host is disposed");
     if (!this.instances.has(pluginId)) throw new Error(`plugin is not active in this session: ${pluginId}`);
+    const state = this.states.get(pluginId)!;
+    if (!enabled && state.manifest.required === true) {
+      throw new Error(`plugin ${pluginId} is required and cannot be disabled`);
+    }
     if (enabled) {
       if (this.failed.has(pluginId)) {
         throw new Error(`plugin ${pluginId} failed and cannot be re-enabled in this session`);
       }
+      if (!this.disabled.has(pluginId)) return;
       this.disabled.delete(pluginId);
-      await this.context.emitEvent("PLUGIN_LOADED", { pluginId, reason: "enabled by user" });
+      state.status = "active";
+      await this.context.emitEvent("PLUGIN_ENABLED", { pluginId, reason: "enabled by user" });
     } else if (!this.disabled.has(pluginId)) {
       this.disabled.add(pluginId);
+      state.status = "disabled";
       await this.context.emitEvent("PLUGIN_DISABLED", { pluginId, reason: "disabled by user" });
     }
   }
@@ -245,12 +368,17 @@ export class PluginHost {
     if (this.disabled.has(pluginId)) return;
     this.disabled.add(pluginId);
     this.failed.add(pluginId);
+    const state = this.states.get(pluginId);
+    if (state) {
+      state.status = "failed";
+      state.failurePhase = phase;
+      state.failureReason = error instanceof Error ? error.message : String(error);
+    }
     await this.context.emitEvent("PLUGIN_FAILED", {
       pluginId,
       phase,
       reason: error instanceof Error ? error.message : String(error),
     }).catch(() => {});
-    await this.context.emitEvent("PLUGIN_DISABLED", { pluginId, reason: `failure in ${phase}` }).catch(() => {});
     const instance = this.instances.get(pluginId);
     if (instance) await this.disposeInstance(pluginId, instance, "failure-cleanup");
   }
@@ -263,8 +391,18 @@ export class PluginHost {
     if (this.disposedInstances.has(instance)) return;
     this.disposedInstances.add(instance);
     try {
-      await instance.dispose?.();
+      await within(
+        Promise.resolve(instance.dispose?.()),
+        this.timeoutMs,
+        `${pluginId}.${phase}`,
+      );
     } catch (error) {
+      const state = this.states.get(pluginId);
+      if (state) {
+        state.status = "failed";
+        state.failurePhase = phase;
+        state.failureReason = error instanceof Error ? error.message : String(error);
+      }
       await this.context.emitEvent("PLUGIN_FAILED", {
         pluginId,
         phase,

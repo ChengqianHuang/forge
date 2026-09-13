@@ -47,7 +47,8 @@ describe("PluginRegistry", () => {
     await host.onAgentEvent({ type: "agent_start" });
     await host.onAgentEvent({ type: "agent_start" });
     assert.equal(healthyCalls, 2);
-    assert.equal(events.filter((event) => event.type === "PLUGIN_DISABLED").length, 1);
+    assert.equal(events.filter((event) => event.type === "PLUGIN_FAILED").length, 1);
+    assert.equal(host.capabilities().plugins.find((plugin) => plugin.id === "test.bad")?.status, "failed");
   });
 
   test("detects command conflicts and keeps the first owner", async () => {
@@ -110,6 +111,34 @@ describe("PluginRegistry", () => {
     assert.equal(calls, 2);
   });
 
+  test("required capabilities cannot be disabled", async () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      manifest: { id: "test.required", name: "required", version: "1", required: true, capabilities: [] },
+      activate: () => ({}),
+    });
+    const host = await registry.activate(context([]));
+    await assert.rejects(() => host.setEnabled("test.required", false), /required/);
+    assert.equal(host.capabilities().plugins[0]?.status, "active");
+  });
+
+  test("restores an optional user-disabled capability without disabling required ones", async () => {
+    const registry = new PluginRegistry();
+    for (const [id, required] of [["optional", false], ["required", true]] as const) {
+      registry.register({
+        manifest: { id: `test.${id}`, name: id, version: "1", required, capabilities: ["slash-command"] },
+        activate: () => ({ slashCommands: [{ name: id, description: "", execute: () => ({ message: id }) }] }),
+      });
+    }
+    const host = await registry.activate(context([]), {
+      disabledPluginIds: new Set(["test.optional", "test.required"]),
+    });
+    assert.deepEqual(host.capabilities().plugins.map((plugin) => plugin.status), ["disabled", "active"]);
+    await assert.rejects(() => host.execute("/optional"), /unknown slash command/);
+    await host.setEnabled("test.optional", true);
+    assert.equal((await host.execute("/optional")).message, "optional");
+  });
+
   test("a failed plugin is disposed once and cannot be re-enabled", async () => {
     const registry = new PluginRegistry();
     let disposals = 0;
@@ -146,6 +175,22 @@ describe("PluginRegistry", () => {
     const host = await registry.activate(context(events));
     assert.equal(rollbackDisposals, 1);
     assert.equal((await host.execute("/same")).message, "first");
+  });
+
+  test("reclaims an instance that resolves after activation timed out", async () => {
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const registry = new PluginRegistry(5);
+    let disposals = 0;
+    registry.register({
+      manifest: { id: "test.late", name: "late", version: "1", capabilities: [] },
+      activate: () => new Promise((resolve) => {
+        setTimeout(() => resolve({ dispose: () => { disposals += 1; } }), 15);
+      }),
+    });
+    const host = await registry.activate(context(events));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(host.capabilities().plugins[0]?.status, "failed");
+    assert.equal(disposals, 1);
   });
 
   test("disposes live plugin instances once in reverse activation order", async () => {

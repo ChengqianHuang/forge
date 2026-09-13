@@ -2,12 +2,13 @@ import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { ForgePlugin } from "../types.ts";
 import { UsageTracker } from "../../guardrails/usage-tracker.ts";
 
-/** Token accounting is an optional event-subscriber plugin, not loop policy. */
+/** Token accounting is a required session capability, not loop policy. */
 export const usagePlugin: ForgePlugin = {
   manifest: {
     id: "forge.usage",
     name: "Usage meter",
     version: "1.0.0",
+    required: true,
     capabilities: ["guardrail", "event-subscriber", "ui"],
   },
   activate(context) {

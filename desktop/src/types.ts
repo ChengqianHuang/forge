@@ -121,6 +121,23 @@ export interface StuckWarningView {
   repetitions: number;
 }
 
+export interface GuardDecisionView {
+  decisionId: string;
+  guardId: string;
+  toolCallId: string;
+  toolName: string;
+  capability: string;
+  policyAction: "allow" | "ask" | "deny";
+  effectiveAction: "allow" | "ask" | "deny";
+  outcome: "allowed" | "approved" | "rejected" | "denied" | "aborted";
+  basis: "policy" | "approval-mode" | "safe-readonly" | "user" | "plugin";
+  approvalMode: ApprovalMode;
+  ruleId: string | null;
+  reason: string;
+  inputSummary: string;
+  at: number;
+}
+
 /**
  * One entry in the session transcript.
  *
@@ -149,6 +166,8 @@ export type TimelineEntry =
 /** Reduced view state derived from the SSE event stream. */
 export interface ConversationView {
   timeline: TimelineEntry[];
+  /** Durable terminal decision for every guarded tool call. */
+  guardDecisions: GuardDecisionView[];
   /** Cumulative token usage + context watermark (USAGE_UPDATE events). */
   usage: { tokensIn: number; tokensOut: number; contextTokens: number | null };
   /** Updated by MODEL_CHANGED events (mid-session model switch). */
@@ -159,6 +178,12 @@ export interface ConversationView {
   approvalMode: ApprovalMode | null;
   /** Updated by THINKING_CHANGED events (mid-session reasoning switch). */
   thinkingLevel: ThinkingLevel | null;
+  /** Live plugin lifecycle state folded from PLUGIN_* events. */
+  pluginStates: Record<string, {
+    status: "active" | "disabled" | "failed" | "disposed";
+    failurePhase?: string;
+    failureReason?: string;
+  }>;
 }
 
 export interface PluginCapabilitySnapshot {
@@ -167,7 +192,10 @@ export interface PluginCapabilitySnapshot {
     name: string;
     version: string;
     capabilities: string[];
-    enabled: boolean;
+    required: boolean;
+    status: "active" | "disabled" | "failed" | "disposed";
+    failurePhase?: string;
+    failureReason?: string;
   }>;
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
 }

@@ -3,7 +3,13 @@ import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
-import type { ApprovalMode, PluginCapabilitySnapshot, ThinkingLevel, TimelineEntry } from "../types.ts";
+import type {
+  ApprovalMode,
+  GuardDecisionView,
+  PluginCapabilitySnapshot,
+  ThinkingLevel,
+  TimelineEntry,
+} from "../types.ts";
 
 /** One-line argument summary for a tool row (the full JSON lives behind expand). */
 function summarizeArgs(args: unknown): string {
@@ -100,6 +106,44 @@ function EmptyConversation({ running }: { running: boolean }) {
   );
 }
 
+const GUARD_OUTCOME_LABEL: Record<GuardDecisionView["outcome"], string> = {
+  allowed: "自动放行",
+  approved: "已批准",
+  rejected: "已拒绝",
+  denied: "策略阻止",
+  aborted: "已中止",
+};
+
+function GuardAudit({ decisions }: { decisions: GuardDecisionView[] }) {
+  if (decisions.length === 0) {
+    return <div className="audit-empty">此会话还没有可审计的工具决策。</div>;
+  }
+  return (
+    <div className="audit-list">
+      {[...decisions].reverse().map((decision) => (
+        <article className="audit-row" key={decision.decisionId}>
+          <div className="audit-row-head">
+            <span className="audit-outcome" data-outcome={decision.outcome}>
+              {GUARD_OUTCOME_LABEL[decision.outcome]}
+            </span>
+            <strong>{decision.toolName}</strong>
+            <span className="audit-capability">{decision.capability}</span>
+            <time>{new Date(decision.at).toLocaleTimeString()}</time>
+          </div>
+          {decision.inputSummary && <code className="audit-input">{decision.inputSummary}</code>}
+          <div className="audit-meta">
+            <span>Guard {decision.guardId}</span>
+            <span>规则 {decision.ruleId ?? "policy default"}</span>
+            <span>依据 {decision.basis}</span>
+            <span>审批级别 {decision.approvalMode}</span>
+          </div>
+          <div className="audit-reason">{decision.reason}</div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function SessionView({
   sessionId,
   goal,
@@ -129,9 +173,9 @@ export function SessionView({
   const resume = store((s) => s.resume);
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const [resumeMessage, setResumeMessage] = useState("");
   const [pluginCapabilities, setPluginCapabilities] = useState<PluginCapabilitySnapshot | null>(null);
-  const [pluginEnabled, setPluginEnabled] = useState<Record<string, boolean>>({});
   const { providers, capabilities, contextWindows } = useModelCatalog();
   const running = status === "running";
   const resumable = status === "failed" || status === "cancelled";
@@ -162,14 +206,13 @@ export function SessionView({
   useEffect(() => {
     let alive = true;
     void import("../lib/api.ts").then(({ fetchPluginCapabilities }) =>
-      fetchPluginCapabilities().then((value) => {
+      fetchPluginCapabilities(sessionId).then((value) => {
         if (!alive) return;
         setPluginCapabilities(value);
-        setPluginEnabled(Object.fromEntries(value.plugins.map((plugin) => [plugin.id, plugin.enabled])));
       }).catch(() => {}),
     );
     return () => { alive = false; };
-  }, []);
+  }, [sessionId]);
 
   // Grow the composer with the content instead of reserving fixed rows.
   useEffect(() => {
@@ -264,9 +307,11 @@ export function SessionView({
   const slashQuery = steerInput.startsWith("/") ? steerInput.slice(1).toLowerCase() : null;
   const slashSuggestions = slashQuery === null
     ? []
-    : (pluginCapabilities?.slashCommands ?? []).filter(
-      (command) => pluginEnabled[command.pluginId] !== false && command.name.startsWith(slashQuery),
-    );
+    : (pluginCapabilities?.slashCommands ?? []).filter((command) => {
+      const plugin = pluginCapabilities?.plugins.find((item) => item.id === command.pluginId);
+      const status = conversation.pluginStates[command.pluginId]?.status ?? plugin?.status;
+      return status === "active" && command.name.startsWith(slashQuery);
+    });
 
   return (
     <div className="session">
@@ -275,6 +320,13 @@ export function SessionView({
           <h1 className="session-goal" title={goal}>{goal}</h1>
           <TokenMeter usage={conversation.usage} contextWindow={contextWindow} />
           <div className="head-actions">
+            <button
+              className="btn btn-ghost btn-small"
+              onClick={() => setAuditOpen(true)}
+              title="Inspect durable guard decisions"
+            >
+              审计 {conversation.guardDecisions.length}
+            </button>
             {resumable && (
               <button
                 className="btn btn-primary btn-small"
@@ -290,6 +342,32 @@ export function SessionView({
           </div>
         </div>
       </header>
+
+      {auditOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setAuditOpen(false);
+          }}
+        >
+          <div className="modal modal-lg audit-modal">
+            <div className="modal-head">
+              <div>
+                <h3 className="modal-title">Guard 审计</h3>
+                <div className="modal-sub">
+                  来自事件日志的最终决策，不重新执行或推测历史策略。
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-small" onClick={() => setAuditOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="modal-scroll">
+              <GuardAudit decisions={conversation.guardDecisions} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {resumeOpen && (
         <div
@@ -434,26 +512,53 @@ export function SessionView({
                   <details className="plugin-picker">
                     <summary>{pluginCapabilities!.plugins.length} 插件</summary>
                     <div className="plugin-panel">
-                      {pluginCapabilities!.plugins.map((plugin) => (
-                        <label key={plugin.id} className="plugin-option" title={plugin.capabilities.join(" · ")}>
-                          <input
-                            type="checkbox"
-                            checked={pluginEnabled[plugin.id] !== false}
-                            disabled={!running}
-                            onChange={async (event) => {
-                              const enabled = event.target.checked;
-                              try {
-                                const { setSessionPluginEnabled } = await import("../lib/api.ts");
-                                await setSessionPluginEnabled(sessionId, plugin.id, enabled);
-                                setPluginEnabled((state) => ({ ...state, [plugin.id]: enabled }));
-                              } catch (err) {
-                                console.error("plugin switch failed:", err);
-                              }
-                            }}
-                          />
-                          <span>{plugin.name}</span>
-                        </label>
-                      ))}
+                      {pluginCapabilities!.plugins.map((plugin) => {
+                        const state = conversation.pluginStates[plugin.id] ?? plugin;
+                        const pluginStatus = state.status;
+                        const detail = state.failureReason
+                          ? `${state.failurePhase ?? "unknown"}: ${state.failureReason}`
+                          : plugin.capabilities.join(" · ");
+                        return (
+                          <label key={plugin.id} className="plugin-option" title={detail}>
+                            <input
+                              type="checkbox"
+                              checked={pluginStatus === "active"}
+                              disabled={!running || plugin.required || pluginStatus === "failed"}
+                              onChange={async (event) => {
+                                const enabled = event.target.checked;
+                                try {
+                                  const { fetchPluginCapabilities, setSessionPluginEnabled } = await import("../lib/api.ts");
+                                  await setSessionPluginEnabled(sessionId, plugin.id, enabled);
+                                  store.setState((current) => ({
+                                    conversation: {
+                                      ...current.conversation,
+                                      pluginStates: {
+                                        ...current.conversation.pluginStates,
+                                        [plugin.id]: { status: enabled ? "active" : "disabled" },
+                                      },
+                                    },
+                                  }));
+                                  setPluginCapabilities(await fetchPluginCapabilities(sessionId));
+                                } catch (err) {
+                                  console.error("plugin switch failed:", err);
+                                }
+                              }}
+                            />
+                            <span>{plugin.name}</span>
+                            <span className="plugin-state">
+                              {pluginStatus === "failed"
+                                ? "已隔离"
+                                : plugin.required
+                                  ? "必需"
+                                  : pluginStatus === "active"
+                                    ? "运行中"
+                                    : pluginStatus === "disabled"
+                                      ? "已暂停"
+                                      : "已释放"}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </details>
                 )}

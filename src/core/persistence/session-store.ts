@@ -85,14 +85,14 @@ function hydrateMessages(sessionId: string, legacy: AgentMessage[]): Promise<Age
     const replayed = await replaySession(sessionId);
     if (replayed.hasMessageEvents || legacy.length === 0) return replayed.messages;
 
+    // One complete JSONL record is the migration commit. Importing messages
+    // one by one leaves a crash window where a partial prefix looks complete
+    // on the next load and silently discards the rest of the legacy history.
     await appendEvent(sessionId, "SESSION_HISTORY_IMPORTED", {
       source: "legacy-session-json",
-      messages: legacy.length,
+      messageCount: legacy.length,
+      contextMessages: legacy,
     });
-    for (const message of legacy) {
-      await appendEvent(sessionId, "MESSAGE_STARTED", { message });
-      await appendEvent(sessionId, "MESSAGE_ENDED", { message });
-    }
     return [...legacy];
   })();
   messageHydrations.set(sessionId, hydration);

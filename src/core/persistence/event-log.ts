@@ -17,6 +17,8 @@ export type PersistedEventType =
   | "SESSION_CREATED"
   | "SESSION_STARTED"
   | "SESSION_RESUMED"
+  // One-shot legacy transcript replacement. Data plane: payload may contain
+  // the complete historical message array and must not flood the EventBus.
   | "SESSION_HISTORY_IMPORTED"
   | "SESSION_ENDED"
   | "SESSION_FAILED"
@@ -53,8 +55,10 @@ export type PersistedEventType =
   | "STUCK_WARNING"
   // Phase 3: tool-policy boundaries (added with the EventBus collapse — see
   // docs/GUARDRAILS.md). Payload shape:
+  //   GUARD_DECISION           → final allow/approve/reject/deny evidence
   //   GUARD_BLOCKED            → { toolName: string, reason: string }
   //   GUARD_APPROVAL_REQUEST   → { requestId: string, toolName: string }
+  | "GUARD_DECISION"
   | "GUARD_BLOCKED"
   | "GUARD_APPROVAL_REQUEST"
   // Phase 5: compaction
@@ -62,6 +66,7 @@ export type PersistedEventType =
   | "COMPACTION_FAILED"
   // plugin platform lifecycle and UI output
   | "PLUGIN_LOADED"
+  | "PLUGIN_ENABLED"
   | "PLUGIN_DISABLED"
   | "PLUGIN_FAILED"
   | "SLASH_COMMAND_INVOKED"
