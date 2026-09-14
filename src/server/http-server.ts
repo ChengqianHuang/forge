@@ -165,6 +165,23 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
+      if (
+        req.method === "GET" &&
+        parts[0] === "sessions" &&
+        parts[2] === "capabilities" &&
+        parts[4] === "read" &&
+        parts.length === 6
+      ) {
+        try {
+          const input = Object.fromEntries(url.searchParams.entries());
+          json(res, 200, await manager.readCapability(parts[1]!, parts[3]!, parts[5]!, input));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /not found|unknown plugin|unknown read action/i.test(message) ? 404 : 409, { error: message });
+        }
+        return;
+      }
+
       if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "plugins" && parts.length === 4) {
         const body = await readBody(req);
         if (typeof body.enabled !== "boolean") {

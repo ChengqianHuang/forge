@@ -68,6 +68,13 @@ snapshot. The desktop resolves renderer keys through one registry. This keeps
 feature-specific buttons out of `SessionView` while preserving a reviewed,
 first-party component set rather than allowing arbitrary remote UI code.
 
+Descriptors may also name a manifest-declared read action. A generic HTTP
+route dispatches bounded, stateless inspection through the registry, including
+after a session runtime has been disposed. The plugin owns the data semantics
+and validation; the kernel knows only plugin id, action id, session context and
+timeout. Large or transient views such as a per-file Git patch therefore stay
+out of the durable event log without adding feature-specific server routes.
+
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
 second decision under its own guard id. The desktop audit panel folds those

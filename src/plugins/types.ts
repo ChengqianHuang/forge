@@ -22,6 +22,12 @@ export interface PluginManifest {
   capabilities: PluginCapability[];
   slashCommands?: Array<{ name: string; description: string }>;
   ui?: PluginUiContribution[];
+  readActions?: PluginReadActionDescriptor[];
+}
+
+export interface PluginReadActionDescriptor {
+  id: string;
+  description: string;
 }
 
 /** Compiled-in desktop contribution. The server declares placement and a
@@ -31,6 +37,12 @@ export interface PluginUiContribution {
   label: string;
   surface: "session-header";
   renderer: string;
+  readAction?: string;
+}
+
+export interface PluginReadContext {
+  session: Session;
+  signal: AbortSignal;
 }
 
 export interface PluginSessionContext {
@@ -76,6 +88,12 @@ export interface PluginInstance {
 export interface ForgePlugin {
   manifest: PluginManifest;
   activate: (context: PluginSessionContext) => Promise<PluginInstance> | PluginInstance;
+  /** Stateless, user-initiated inspection available after runtime disposal. */
+  read?: (
+    actionId: string,
+    input: Record<string, unknown>,
+    context: PluginReadContext,
+  ) => Promise<unknown> | unknown;
 }
 
 export type PluginRuntimeStatus = "active" | "disabled" | "failed" | "disposed";

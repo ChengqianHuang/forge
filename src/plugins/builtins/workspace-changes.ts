@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
+import { lstat, realpath } from "node:fs/promises";
+import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
 import type { ForgePlugin } from "../types.ts";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 4_000;
 const GIT_MAX_BUFFER = 4 * 1024 * 1024;
+const DIFF_MAX_BUFFER = 2 * 1024 * 1024;
+const DIFF_RETURN_BYTES = 256 * 1024;
 
 export type WorkspaceChange = {
   path: string;
@@ -24,6 +27,14 @@ export type WorkspaceChangeSnapshot = {
   repoRoot: string | null;
   files: WorkspaceChange[];
   reason?: "not-git" | "git-error";
+};
+
+export type WorkspaceFileDiff = {
+  path: string;
+  kind: "text" | "binary" | "empty";
+  patch: string;
+  truncated: boolean;
+  bytes: number;
 };
 
 type RawChange = {
@@ -112,10 +123,10 @@ async function captureRaw(workspace: string): Promise<RawSnapshot> {
 
   try {
     const [porcelain, numstat] = await Promise.all([
-      git(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+      git(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
       // A freshly initialized repository has no HEAD yet. Status is still
       // useful there; only the tracked line counts are unavailable.
-      git(workspace, ["diff", "HEAD", "--numstat"]).catch(() => ""),
+      git(workspace, ["diff", "HEAD", "--numstat", "--", "."]).catch(() => ""),
     ]);
     const stats = parseNumstat(numstat);
     const entries = parsePorcelain(porcelain);
@@ -172,17 +183,81 @@ export async function captureWorkspaceChanges(
   return { raw, snapshot: { supported: true, repoRoot: raw.repoRoot, files } };
 }
 
+function isWithin(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
+}
+
+async function gitPatch(workspace: string, args: string[]): Promise<Buffer> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd: workspace,
+      encoding: "buffer",
+      timeout: GIT_TIMEOUT_MS,
+      maxBuffer: DIFF_MAX_BUFFER,
+      windowsHide: true,
+    });
+    return stdout as Buffer;
+  } catch (error) {
+    const stdout = (error as { stdout?: unknown }).stdout;
+    if (Buffer.isBuffer(stdout)) return stdout;
+    throw error;
+  }
+}
+
+/** Current working-tree patch for one event-projected path. Nothing is
+ * persisted; callers receive a bounded snapshot generated on demand. */
+export async function readWorkspaceFileDiff(
+  workspace: string,
+  requestedPath: string,
+): Promise<WorkspaceFileDiff> {
+  if (!requestedPath || requestedPath.includes("\0")) throw new Error("path is required");
+  const repoRoot = (await git(workspace, ["rev-parse", "--show-toplevel"])).trim();
+  // macOS temp paths commonly enter through /var while Git canonicalizes to
+  // /private/var. Compare canonical roots or valid in-workspace paths look
+  // like escapes.
+  const absoluteWorkspace = await realpath(workspace);
+  // Porcelain paths are repository-root relative even when cwd and `-- .`
+  // constrain the status scan to a nested session workspace.
+  const absolutePath = resolve(repoRoot, requestedPath);
+  if (!isWithin(repoRoot, absolutePath) || !isWithin(absoluteWorkspace, absolutePath)) {
+    throw new Error("path is outside the session workspace");
+  }
+  const repoPath = relative(repoRoot, absolutePath).split(sep).join("/");
+  const status = await git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all", "--", repoPath]);
+  if (!status.trim()) return { path: requestedPath, kind: "empty", patch: "", truncated: false, bytes: 0 };
+
+  let output: Buffer;
+  if (status.startsWith("??")) {
+    const info = await lstat(absolutePath);
+    if (info.isSymbolicLink()) {
+      return { path: requestedPath, kind: "binary", patch: "", truncated: false, bytes: 0 };
+    }
+    output = await gitPatch(repoRoot, ["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", absolutePath]);
+  } else {
+    output = await gitPatch(repoRoot, ["diff", "HEAD", "--no-ext-diff", "--unified=3", "--", repoPath])
+      .catch(() => gitPatch(repoRoot, ["diff", "--cached", "--no-ext-diff", "--unified=3", "--", repoPath]));
+  }
+  const bytes = output.byteLength;
+  const truncated = bytes > DIFF_RETURN_BYTES;
+  const patch = output.subarray(0, DIFF_RETURN_BYTES).toString("utf8");
+  const kind = /Binary files .* differ|GIT binary patch/.test(patch) ? "binary" : patch ? "text" : "empty";
+  return { path: requestedPath, kind, patch, truncated, bytes };
+}
+
 export const workspaceChangesPlugin: ForgePlugin = {
   manifest: {
     id: "forge.workspace-changes",
     name: "Workspace Changes",
     version: "1.0.0",
     capabilities: ["event-subscriber", "ui"],
+    readActions: [{ id: "diff", description: "Read the current bounded Git diff for one workspace file" }],
     ui: [{
       id: "workspace-changes",
       label: "变更",
       surface: "session-header",
       renderer: "workspace-changes",
+      readAction: "diff",
     }],
   },
   async activate(context) {
@@ -206,5 +281,11 @@ export const workspaceChangesPlugin: ForgePlugin = {
         }
       },
     };
+  },
+  async read(actionId, input, context) {
+    if (actionId !== "diff") throw new Error(`unknown workspace changes action: ${actionId}`);
+    if (typeof input.path !== "string") throw new Error("path is required");
+    if (context.signal.aborted) throw context.signal.reason;
+    return readWorkspaceFileDiff(context.session.workspace, input.path);
   },
 };

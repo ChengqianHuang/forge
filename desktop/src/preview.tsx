@@ -451,6 +451,26 @@ createRoot(document.getElementById("root")!).render(
       <WorkspaceChangesDialog
         changes={store.getState().conversation.workspaceChanges!}
         onClose={() => {}}
+        readDiff={async (path) => ({
+          path,
+          kind: "text",
+          truncated: false,
+          bytes: 286,
+          patch: [
+            `diff --git a/${path} b/${path}`,
+            `--- a/${path}`,
+            `+++ b/${path}`,
+            "@@ -1,4 +1,8 @@",
+            " export function parseArgs(argv: string[]) {",
+            "+  const json = argv.includes(\"--json\");",
+            "   return {",
+            "-    verbose: argv.includes(\"--verbose\"),",
+            "+    verbose: argv.includes(\"--verbose\"),",
+            "+    json,",
+            "   };",
+            " }",
+          ].join("\n"),
+        })}
       />
     )}
   </>,

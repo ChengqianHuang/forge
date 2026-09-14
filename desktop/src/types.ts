@@ -223,8 +223,17 @@ export interface PluginCapabilitySnapshot {
     label: string;
     surface: "session-header";
     renderer: string;
+    readAction?: string;
     pluginId: string;
   }>;
+}
+
+export interface WorkspaceFileDiff {
+  path: string;
+  kind: "text" | "binary" | "empty";
+  patch: string;
+  truncated: boolean;
+  bytes: number;
 }
 
 export interface ReliabilityMetrics {

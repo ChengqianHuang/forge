@@ -4,7 +4,8 @@
  * SSE stream, abort, delete) with a fake subscription — no network calls are
  * awaited (the background agent fails against the fake key and is aborted).
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startForgeServer, type ForgeServerHandle } from "../server/http-server.ts";
@@ -16,6 +17,13 @@ async function main(): Promise<void> {
   process.env.FORGE_HOME = forgeHome;
   process.env.FORGE_EVENTS_DIR = join(forgeHome, "events");
   process.env.FORGE_SESSIONS_DIR = join(forgeHome, "sessions");
+  const repoWorkspace = join(forgeHome, "workspace");
+  mkdirSync(repoWorkspace, { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repoWorkspace });
+  writeFileSync(join(repoWorkspace, "tracked.txt"), "before\n");
+  execFileSync("git", ["add", "tracked.txt"], { cwd: repoWorkspace });
+  execFileSync("git", ["-c", "user.name=Forge Smoke", "-c", "user.email=forge@smoke.invalid", "commit", "-qm", "fixture"], { cwd: repoWorkspace });
+  writeFileSync(join(repoWorkspace, "tracked.txt"), "after\n");
 
   // A fake subscription: the background agent will fail against it, which is
   // part of what we verify (failure path + abort + delete).
@@ -54,7 +62,7 @@ async function main(): Promise<void> {
       await fetch(`${base}/projects`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ path: forgeHome }),
+        body: JSON.stringify({ path: repoWorkspace }),
       })
     ).json()) as { id: string; path: string };
     console.log(`  project: ${proj.id} path=${proj.path}`);
@@ -105,7 +113,7 @@ async function main(): Promise<void> {
       await fetch(`${base}/sessions`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ goal: "smoke session" }),
+        body: JSON.stringify({ goal: "smoke session", projectId: proj.id }),
       })
     ).json()) as { sessionId: string };
     const sessionId = created.sessionId as string;
@@ -210,8 +218,14 @@ async function main(): Promise<void> {
     ok = ok && reliabilityResponse.status === 200;
     ok = ok && typeof reliability.tools?.guardCoverage === "number";
     ok = ok && typeof reliability.integrity?.healthy === "boolean";
+    const diffResponse = await fetch(
+      `${base}/sessions/${sessionId}/capabilities/forge.workspace-changes/read/diff?path=${encodeURIComponent("tracked.txt")}`,
+      { headers: auth },
+    );
+    const diff = await diffResponse.json() as { kind?: string; patch?: string };
+    ok = ok && diffResponse.status === 200 && diff.kind === "text" && diff.patch?.includes("+after") === true;
     const deleted = await fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers: auth });
-    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability: ${reliability.integrity?.healthy}, delete: ${deleted.status}`);
+    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability: ${reliability.integrity?.healthy}, diff: ${diffResponse.status}, delete: ${deleted.status}`);
     ok = ok && deleted.status === 200;
 
     // Cleanup: the session file must be gone.

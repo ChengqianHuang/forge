@@ -56,7 +56,40 @@ export class PluginRegistry {
     if (this.plugins.has(plugin.manifest.id)) {
       throw new Error(`plugin already registered: ${plugin.manifest.id}`);
     }
+    const actionIds = new Set<string>();
+    for (const action of plugin.manifest.readActions ?? []) {
+      if (!/^[a-z0-9][a-z0-9_-]*$/.test(action.id) || actionIds.has(action.id)) {
+        throw new Error(`invalid or duplicate read action: ${plugin.manifest.id}/${action.id}`);
+      }
+      actionIds.add(action.id);
+    }
+    for (const contribution of plugin.manifest.ui ?? []) {
+      if (contribution.readAction && !actionIds.has(contribution.readAction)) {
+        throw new Error(`UI contribution ${plugin.manifest.id}/${contribution.id} references unknown read action ${contribution.readAction}`);
+      }
+    }
     this.plugins.set(plugin.manifest.id, plugin);
+  }
+
+  async read(
+    pluginId: string,
+    actionId: string,
+    input: Record<string, unknown>,
+    context: import("./types.ts").PluginReadContext,
+  ): Promise<unknown> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    if (!plugin.manifest.readActions?.some((action) => action.id === actionId) || !plugin.read) {
+      throw new Error(`unknown read action: ${pluginId}/${actionId}`);
+    }
+    const timeoutController = new AbortController();
+    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
+    return within(
+      Promise.resolve(plugin.read(actionId, input, { ...context, signal })),
+      this.timeoutMs,
+      `${pluginId}.read:${actionId}`,
+      () => timeoutController.abort(new Error(`${pluginId}.read:${actionId} timed out`)),
+    );
   }
 
   capabilities(status: PluginRuntimeStatus = "disposed"): PluginCapabilitySnapshot {

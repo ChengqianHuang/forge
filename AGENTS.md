@@ -328,7 +328,7 @@ Every guardrail must have a UI entry point.
 | Context compaction | In-place notice on COMPACTION |
 | Session management | SessionList + StatusBar |
 | Harness reliability | Session header 诊断 button + event-derived diagnostics modal |
-| Workspace changes | Registered session-header contribution + Git change modal |
+| Workspace changes | Registered session-header contribution + Git change/diff modal |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |
 | Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |

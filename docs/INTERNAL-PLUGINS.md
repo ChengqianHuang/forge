@@ -21,11 +21,19 @@ supports:
 - contributions to all six Pi hooks;
 - agent-event subscribers;
 - session-scoped services;
+- stateless, user-initiated read actions;
 - small capability descriptors consumed by the desktop.
 
 UI descriptors declare a stable contribution id, label, surface and renderer
 key. The desktop maps renderer keys through one compiled-in registry; session
 components do not contain branches for individual capability ids.
+
+A UI descriptor may bind to a manifest-declared read action. The desktop calls
+the generic `GET /sessions/:id/capabilities/:pluginId/read/:actionId` route;
+the registry validates the capability and action while the plugin owns input
+validation and result semantics. Read actions are stateless inspection, not a
+second plugin runtime: they remain available for a terminal session after its
+runtime instance is disposed, run under a timeout and receive an abort signal.
 
 Registration is explicit in `src/plugins/builtins/index.ts`. TypeScript is the
 contract; internal modules do not need compatibility or deprecation machinery.
@@ -101,10 +109,18 @@ lists current net changes, line counts and whether a dirty path existed before
 the session; it never attributes a preexisting edit to the agent.
 
 Its manifest registers a session-header UI contribution. The desktop renderer
-shows the latest persisted snapshot and remains available after the plugin's
-runtime resources are disposed. Non-Git workspaces emit an explicit unsupported
-state instead of failing the session. Git is invoked without a shell and only
-with read-only commands; full patches are not copied into the event log.
+shows the latest persisted snapshot and requests the current diff only when the
+user selects a file. The diff read remains available after the plugin's runtime
+resources are disposed. Non-Git workspaces emit an explicit unsupported state
+instead of failing the session. Git is invoked without a shell and only with
+read-only commands; full patches are not copied into the event log.
+
+Diff reads are constrained to the session workspace after canonical path
+resolution. Untracked symbolic links are never followed, binary content is
+reported without embedding a patch, and returned text is capped at 256 KiB
+with its original byte count and truncation marker. The result is a live
+working-tree view, not historical evidence; the persisted
+`WORKSPACE_CHANGES` snapshot remains the durable session projection.
 
 ### MCP tools
 

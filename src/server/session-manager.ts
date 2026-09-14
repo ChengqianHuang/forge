@@ -619,6 +619,26 @@ export class SessionManager {
     });
   }
 
+  /** Dispatch a stateless, user-initiated read through the owning capability.
+   * Disposed is allowed: read actions intentionally outlive run resources. */
+  async readCapability(
+    sessionId: string,
+    pluginId: string,
+    actionId: string,
+    input: Record<string, unknown>,
+  ): Promise<unknown> {
+    const session = await loadSession(sessionId);
+    if (!session) throw new Error(`session ${sessionId} not found`);
+    const snapshot = await this.pluginCapabilities(sessionId);
+    const plugin = snapshot.plugins.find((candidate) => candidate.id === pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    if (plugin.status === "disabled" || plugin.status === "failed") {
+      throw new Error(`plugin ${pluginId} is ${plugin.status} for this session`);
+    }
+    const controller = new AbortController();
+    return this.plugins.read(pluginId, actionId, input, { session, signal: controller.signal });
+  }
+
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return { ok: false, message: "session is not running" };

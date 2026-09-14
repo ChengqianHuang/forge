@@ -92,6 +92,18 @@ export async function fetchReliability(id: string): Promise<ReliabilityMetrics> 
   return getJson(`/sessions/${id}/reliability`);
 }
 
+export async function readCapability<T>(
+  sessionId: string,
+  pluginId: string,
+  actionId: string,
+  input: Record<string, string>,
+): Promise<T> {
+  const query = new URLSearchParams(input);
+  return getJson(
+    `/sessions/${sessionId}/capabilities/${encodeURIComponent(pluginId)}/read/${encodeURIComponent(actionId)}?${query}`,
+  );
+}
+
 export async function setSessionPluginEnabled(id: string, pluginId: string, enabled: boolean): Promise<void> {
   await send(`/sessions/${id}/plugins/${encodeURIComponent(pluginId)}`, "POST", { enabled });
 }

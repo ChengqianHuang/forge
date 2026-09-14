@@ -1,13 +1,17 @@
 import { useState, type ComponentType } from "react";
-import type { ConversationView, PluginCapabilitySnapshot } from "../types.ts";
+import { readCapability } from "../lib/api.ts";
+import type { ConversationView, PluginCapabilitySnapshot, WorkspaceFileDiff } from "../types.ts";
 import { WorkspaceChangesDialog } from "./WorkspaceChangesDialog.tsx";
 
 type ActionProps = {
+  sessionId: string;
+  pluginId: string;
   label: string;
+  readAction?: string;
   conversation: ConversationView;
 };
 
-function WorkspaceChangesAction({ label, conversation }: ActionProps) {
+function WorkspaceChangesAction({ sessionId, pluginId, label, readAction, conversation }: ActionProps) {
   const [open, setOpen] = useState(false);
   const changes = conversation.workspaceChanges;
   if (!changes) return null;
@@ -16,7 +20,15 @@ function WorkspaceChangesAction({ label, conversation }: ActionProps) {
       <button className="btn btn-ghost btn-small" onClick={() => setOpen(true)} title="Inspect current Git workspace changes">
         {label} {changes.supported ? changes.files.length : "—"}
       </button>
-      {open && <WorkspaceChangesDialog changes={changes} onClose={() => setOpen(false)} />}
+      {open && (
+        <WorkspaceChangesDialog
+          changes={changes}
+          onClose={() => setOpen(false)}
+          readDiff={readAction
+            ? (path) => readCapability<WorkspaceFileDiff>(sessionId, pluginId, readAction, { path })
+            : undefined}
+        />
+      )}
     </>
   );
 }
@@ -29,9 +41,11 @@ const RENDERERS: Record<string, ComponentType<ActionProps>> = {
 export function SessionCapabilityActions({
   capabilities,
   conversation,
+  sessionId,
 }: {
   capabilities: PluginCapabilitySnapshot | null;
   conversation: ConversationView;
+  sessionId: string;
 }) {
   return (capabilities?.uiContributions ?? []).flatMap((contribution) => {
     if (contribution.surface !== "session-header") return [];
@@ -43,7 +57,10 @@ export function SessionCapabilityActions({
     return [
       <Renderer
         key={`${contribution.pluginId}:${contribution.id}`}
+        sessionId={sessionId}
+        pluginId={contribution.pluginId}
         label={contribution.label}
+        readAction={contribution.readAction}
         conversation={conversation}
       />,
     ];

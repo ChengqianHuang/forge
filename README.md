@@ -42,11 +42,13 @@ session-scoped registry currently supports:
 - Pi tools, including MCP stdio servers configured in Settings;
 - all six `AgentLoopConfig` guardrail hooks;
 - agent-event subscribers and shared session services;
+- bounded stateless read actions for on-demand inspection;
 - UI capability descriptors and timeline output.
 
 The first registered desktop contribution is Workspace Changes: it captures a
 Git baseline, distinguishes preexisting dirty files and shows the final net
-change summary without modifying the agent loop.
+change summary plus an on-demand, bounded per-file diff without modifying the
+agent loop or persisting full patches in the event log.
 
 Plugin failures are isolated to that plugin in that session. Core safety hooks
 run first, built-in tool names cannot be shadowed, and MCP tools follow the same

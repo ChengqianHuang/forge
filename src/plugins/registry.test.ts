@@ -42,6 +42,76 @@ describe("PluginRegistry", () => {
     }]);
   });
 
+  test("validates and dispatches stateless read actions", async () => {
+    const registry = new PluginRegistry();
+    let activated = false;
+    registry.register({
+      manifest: {
+        id: "test.reader",
+        name: "reader",
+        version: "1",
+        capabilities: ["ui"],
+        readActions: [{ id: "inspect", description: "inspect" }],
+        ui: [{ id: "panel", label: "Panel", surface: "session-header", renderer: "test", readAction: "inspect" }],
+      },
+      activate: () => { activated = true; return {}; },
+      read: async (action, input) => ({ action, input }),
+    });
+    const result = await registry.read("test.reader", "inspect", { path: "a" }, {
+      session: context([]).session,
+      signal: new AbortController().signal,
+    });
+    assert.deepEqual(result, { action: "inspect", input: { path: "a" } });
+    assert.equal(activated, false);
+    await assert.rejects(
+      () => registry.read("test.reader", "missing", {}, { session: context([]).session, signal: new AbortController().signal }),
+      /unknown read action/,
+    );
+  });
+
+  test("bounds read actions and aborts timed-out plugin work", async () => {
+    const registry = new PluginRegistry(10);
+    let aborted = false;
+    registry.register({
+      manifest: {
+        id: "test.slow-reader",
+        name: "slow reader",
+        version: "1",
+        capabilities: ["ui"],
+        readActions: [{ id: "inspect", description: "inspect" }],
+      },
+      activate: () => ({}),
+      read: (_action, _input, readContext) => new Promise((_resolve, reject) => {
+        readContext.signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(readContext.signal.reason);
+        }, { once: true });
+      }),
+    });
+    await assert.rejects(
+      () => registry.read("test.slow-reader", "inspect", {}, {
+        session: context([]).session,
+        signal: new AbortController().signal,
+      }),
+      /timed out/,
+    );
+    assert.equal(aborted, true);
+  });
+
+  test("rejects UI descriptors that reference undeclared read actions", () => {
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.bad-ui",
+        name: "bad",
+        version: "1",
+        capabilities: ["ui"],
+        ui: [{ id: "panel", label: "Panel", surface: "session-header", renderer: "test", readAction: "missing" }],
+      },
+      activate: () => ({}),
+    }), /references unknown read action/);
+  });
+
   test("rejects duplicate plugin ids", () => {
     const registry = new PluginRegistry();
     const plugin: ForgePlugin = {
