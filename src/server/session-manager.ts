@@ -54,7 +54,6 @@ import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
 import type { PluginCapabilitySnapshot } from "../plugins/types.ts";
 import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
-import { extractReliabilityMetrics } from "../reliability/metrics.ts";
 
 /**
  * Everything that exists only while one run of a session is live. The
@@ -607,16 +606,6 @@ export class SessionManager {
     const session = await loadSession(sessionId);
     if (!session) throw new Error(`session ${sessionId} not found`);
     return projectPluginCapabilities(this.plugins.capabilities(), await readEvents(sessionId));
-  }
-
-  /** Read-only projection of the durable log; never a second state store. */
-  async reliability(sessionId: string) {
-    const session = await loadSession(sessionId);
-    if (!session) throw new Error(`session ${sessionId} not found`);
-    return extractReliabilityMetrics({
-      events: await readEvents(sessionId),
-      sessionStatus: session.status,
-    });
   }
 
   /** Dispatch a stateless, user-initiated read through the owning capability.

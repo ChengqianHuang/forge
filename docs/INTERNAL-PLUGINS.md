@@ -31,7 +31,8 @@ components do not contain branches for individual capability ids.
 A UI descriptor may bind to a manifest-declared read action. The desktop calls
 the generic `GET /sessions/:id/capabilities/:pluginId/read/:actionId` route;
 the registry validates the capability and action while the plugin owns input
-validation and result semantics. Read actions are stateless inspection, not a
+validation and result semantics. A manifest cannot declare read actions
+without installing their handler. Read actions are stateless inspection, not a
 second plugin runtime: they remain available for a terminal session after its
 runtime instance is disposed, run under a timeout and receive an abort signal.
 
@@ -100,6 +101,19 @@ The usage subscriber consumes assistant `message_end` events, updates its
 session tracker and emits `USAGE_UPDATE` for the desktop token meter. It exposes
 the tracker as a session service used by compaction. If it is unavailable, the
 runner substitutes an inert tracker and continues.
+
+### Harness reliability
+
+The required reliability capability contributes the desktop **诊断** action
+and a stateless `metrics` read action. It derives lifecycle, guard coverage,
+approval, cancellation, recovery and plugin-failure measurements directly from
+the session event log. It owns no telemetry store and never evaluates generated
+text or the model's completion decision.
+
+Running and disposed sessions use the same generic capability-read route. The
+former dedicated `SessionManager.reliability` method and HTTP endpoint were
+removed when this capability was registered; the kernel now knows only that a
+declared read action was requested.
 
 ### Workspace changes
 

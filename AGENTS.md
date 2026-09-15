@@ -327,7 +327,7 @@ Every guardrail must have a UI entry point.
 | Streaming | SessionView (real-time conversation) |
 | Context compaction | In-place notice on COMPACTION |
 | Session management | SessionList + StatusBar |
-| Harness reliability | Session header 诊断 button + event-derived diagnostics modal |
+| Harness reliability | Registered session-header contribution + event-derived diagnostics modal |
 | Workspace changes | Registered session-header contribution + Git change/diff modal |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |

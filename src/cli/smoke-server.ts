@@ -130,13 +130,18 @@ async function main(): Promise<void> {
     };
     const commandNames = pluginCaps.slashCommands.map((command) => command.name);
     const usage = pluginCaps.plugins.find((plugin) => plugin.id === "forge.usage");
+    const reliabilityPlugin = pluginCaps.plugins.find((plugin) => plugin.id === "forge.reliability");
     const workspaceChanges = pluginCaps.plugins.find((plugin) => plugin.id === "forge.workspace-changes");
     ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
     ok = ok && usage?.required === true && ["active", "failed"].includes(usage.status);
+    ok = ok && reliabilityPlugin?.required === true && ["active", "failed"].includes(reliabilityPlugin.status);
     ok = ok && workspaceChanges?.required === false;
     const capsWithUi = pluginCaps as typeof pluginCaps & {
-      uiContributions?: Array<{ pluginId: string; renderer: string }>;
+      uiContributions?: Array<{ pluginId: string; renderer: string; readAction?: string }>;
     };
+    ok = ok && capsWithUi.uiContributions?.some((item) =>
+      item.pluginId === "forge.reliability" && item.renderer === "reliability" && item.readAction === "metrics"
+    ) === true;
     ok = ok && capsWithUi.uiContributions?.some((item) =>
       item.pluginId === "forge.workspace-changes" && item.renderer === "workspace-changes"
     ) === true;
@@ -206,11 +211,14 @@ async function main(): Promise<void> {
     console.log(`  sse frames: ${sseFrames}`);
     ok = ok && sseFrames >= 2;
 
-    // 6. Approvals endpoint (empty) + abort + reliability projection + delete.
+    // 6. Approvals endpoint (empty) + abort + capability reads + delete.
     const approvals = (await (await fetch(`${base}/sessions/${sessionId}/approvals`, { headers: auth })).json()) as { approvals: unknown[] };
     await fetch(`${base}/sessions/${sessionId}/abort`, { method: "POST", headers: auth });
     await new Promise((r) => setTimeout(r, 300));
-    const reliabilityResponse = await fetch(`${base}/sessions/${sessionId}/reliability`, { headers: auth });
+    const reliabilityResponse = await fetch(
+      `${base}/sessions/${sessionId}/capabilities/forge.reliability/read/metrics`,
+      { headers: auth },
+    );
     const reliability = await reliabilityResponse.json() as {
       tools?: { guardCoverage?: number };
       integrity?: { healthy?: boolean; violations?: unknown[] };
@@ -218,6 +226,12 @@ async function main(): Promise<void> {
     ok = ok && reliabilityResponse.status === 200;
     ok = ok && typeof reliability.tools?.guardCoverage === "number";
     ok = ok && typeof reliability.integrity?.healthy === "boolean";
+    const terminalCaps = (await (
+      await fetch(`${base}/sessions/${sessionId}/capabilities`, { headers: auth })
+    ).json()) as { plugins?: Array<{ id: string; status: string }> };
+    ok = ok && terminalCaps.plugins?.find((plugin) => plugin.id === "forge.reliability")?.status === "disposed";
+    const retiredReliabilityRoute = await fetch(`${base}/sessions/${sessionId}/reliability`, { headers: auth });
+    ok = ok && retiredReliabilityRoute.status === 404;
     const diffResponse = await fetch(
       `${base}/sessions/${sessionId}/capabilities/forge.workspace-changes/read/diff?path=${encodeURIComponent("tracked.txt")}`,
       { headers: auth },
@@ -225,7 +239,7 @@ async function main(): Promise<void> {
     const diff = await diffResponse.json() as { kind?: string; patch?: string };
     ok = ok && diffResponse.status === 200 && diff.kind === "text" && diff.patch?.includes("+after") === true;
     const deleted = await fetch(`${base}/sessions/${sessionId}`, { method: "DELETE", headers: auth });
-    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability: ${reliability.integrity?.healthy}, diff: ${diffResponse.status}, delete: ${deleted.status}`);
+    console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability capability: ${reliability.integrity?.healthy}, diff: ${diffResponse.status}, delete: ${deleted.status}`);
     ok = ok && deleted.status === 200;
 
     // Cleanup: the session file must be gone.

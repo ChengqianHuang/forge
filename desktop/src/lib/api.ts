@@ -9,7 +9,6 @@ import type {
   Session,
   ThinkingLevel,
   PluginCapabilitySnapshot,
-  ReliabilityMetrics,
 } from "../types.ts";
 
 export type DesktopConfig = { baseUrl: string; token: string };
@@ -86,10 +85,6 @@ export async function executeSlashCommand(id: string, command: string): Promise<
 
 export async function fetchPluginCapabilities(id: string): Promise<PluginCapabilitySnapshot> {
   return getJson(`/sessions/${id}/capabilities`);
-}
-
-export async function fetchReliability(id: string): Promise<ReliabilityMetrics> {
-  return getJson(`/sessions/${id}/reliability`);
 }
 
 export async function readCapability<T>(

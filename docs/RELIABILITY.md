@@ -25,9 +25,11 @@ npm run reliability -- --json
 ```
 
 The same projection is available in the desktop session header under
-**诊断**. It is fetched from `GET /sessions/:id/reliability`; the endpoint
-recomputes from the current log on every request, so running sessions can be
-inspected without creating mutable telemetry state.
+**诊断**. The required `forge.reliability` capability declares the button and
+its `metrics` read action. The desktop invokes that action through the generic
+capability-read endpoint, which recomputes from the current log on every
+request. Running and terminal sessions can therefore be inspected without
+creating mutable telemetry state or a reliability-specific kernel route.
 
 An unhealthy report means a Forge mechanism invariant was violated. It says
 nothing about whether the model's engineering result was good. Real-task

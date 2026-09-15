@@ -50,6 +50,10 @@ Git baseline, distinguishes preexisting dirty files and shows the final net
 change summary plus an on-demand, bounded per-file diff without modifying the
 agent loop or persisting full patches in the event log.
 
+Harness Reliability uses the same contribution and read-action path to project
+mechanism diagnostics from the durable event log. It has no feature-specific
+server route and never judges the model's answer.
+
 Plugin failures are isolated to that plugin in that session. Core safety hooks
 run first, built-in tool names cannot be shadowed, and MCP tools follow the same
 approval path as built-ins. See [the internal registry](docs/INTERNAL-PLUGINS.md).

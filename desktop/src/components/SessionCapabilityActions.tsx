@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
 import { readCapability } from "../lib/api.ts";
-import type { ConversationView, PluginCapabilitySnapshot, WorkspaceFileDiff } from "../types.ts";
+import type { ConversationView, PluginCapabilitySnapshot, ReliabilityMetrics, WorkspaceFileDiff } from "../types.ts";
+import { ReliabilityDialog } from "./ReliabilityDialog.tsx";
 import { WorkspaceChangesDialog } from "./WorkspaceChangesDialog.tsx";
 
 type ActionProps = {
@@ -33,7 +34,45 @@ function WorkspaceChangesAction({ sessionId, pluginId, label, readAction, conver
   );
 }
 
+function ReliabilityAction({ sessionId, pluginId, label, readAction }: ActionProps) {
+  const [open, setOpen] = useState(false);
+  const [metrics, setMetrics] = useState<ReliabilityMetrics | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inspect = async () => {
+    setOpen(true);
+    setLoading(true);
+    setError(null);
+    try {
+      if (!readAction) throw new Error("Reliability capability has no read action");
+      setMetrics(await readCapability<ReliabilityMetrics>(sessionId, pluginId, readAction, {}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button className="btn btn-ghost btn-small" onClick={() => void inspect()} title="Inspect event-derived harness reliability">
+        {label}
+      </button>
+      {open && (
+        <ReliabilityDialog
+          metrics={metrics}
+          loading={loading}
+          error={error}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
 const RENDERERS: Record<string, ComponentType<ActionProps>> = {
+  reliability: ReliabilityAction,
   "workspace-changes": WorkspaceChangesAction,
 };
 

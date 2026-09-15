@@ -156,15 +156,6 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
-      if (req.method === "GET" && parts[0] === "sessions" && parts[2] === "reliability" && parts.length === 3) {
-        try {
-          json(res, 200, await manager.reliability(parts[1]!));
-        } catch (err) {
-          json(res, 404, { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
       if (
         req.method === "GET" &&
         parts[0] === "sessions" &&

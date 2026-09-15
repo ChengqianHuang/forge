@@ -63,6 +63,9 @@ export class PluginRegistry {
       }
       actionIds.add(action.id);
     }
+    if (actionIds.size > 0 && !plugin.read) {
+      throw new Error(`plugin ${plugin.manifest.id} declares read actions without a read handler`);
+    }
     for (const contribution of plugin.manifest.ui ?? []) {
       if (contribution.readAction && !actionIds.has(contribution.readAction)) {
         throw new Error(`UI contribution ${plugin.manifest.id}/${contribution.id} references unknown read action ${contribution.readAction}`);

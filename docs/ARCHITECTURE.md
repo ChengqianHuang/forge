@@ -131,9 +131,10 @@ result therefore cannot reopen or double-settle a cancelled session.
 
 ## Reliability projection
 
-Harness measurements are computed from the event log rather than stored as a
-parallel telemetry database. The projection checks event identity/order,
-run-to-terminal cardinality, tool call/result pairing, core-guard coverage,
-approval settlement, cancellation convergence, recovery markers and plugin
-failures. These are Forge mechanism invariants; generated text and model task
-quality are deliberately outside the projection.
+The required `forge.reliability` capability computes harness measurements from
+the event log rather than storing a parallel telemetry database. Its generic
+read action checks event identity/order, run-to-terminal cardinality, tool
+call/result pairing, core-guard coverage, approval settlement, cancellation
+convergence, recovery markers and plugin failures. The kernel has no dedicated
+reliability method or HTTP route. These are Forge mechanism invariants;
+generated text and model task quality are deliberately outside the projection.

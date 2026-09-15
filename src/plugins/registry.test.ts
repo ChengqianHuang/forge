@@ -112,6 +112,20 @@ describe("PluginRegistry", () => {
     }), /references unknown read action/);
   });
 
+  test("rejects declared read actions without a handler", () => {
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.missing-reader",
+        name: "missing reader",
+        version: "1",
+        capabilities: ["ui"],
+        readActions: [{ id: "inspect", description: "inspect" }],
+      },
+      activate: () => ({}),
+    }), /without a read handler/);
+  });
+
   test("rejects duplicate plugin ids", () => {
     const registry = new PluginRegistry();
     const plugin: ForgePlugin = {
