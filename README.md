@@ -54,6 +54,10 @@ Harness Reliability uses the same contribution and read-action path to project
 mechanism diagnostics from the durable event log. It has no feature-specific
 server route and never judges the model's answer.
 
+Guard Audit is an event-projected UI capability: it renders the durable guard
+decisions already present in the desktop conversation projection, while guard
+execution remains required kernel safety.
+
 Plugin failures are isolated to that plugin in that session. Core safety hooks
 run first, built-in tool names cannot be shadowed, and MCP tools follow the same
 approval path as built-ins. See [the internal registry](docs/INTERNAL-PLUGINS.md).

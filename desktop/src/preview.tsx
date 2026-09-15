@@ -6,7 +6,7 @@
  * plain browser without the Tauri sidecar.
  * Open /preview.html?scene=<name>&theme=<dark|light>
  *
- * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | reliability | changes
+ * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | audit | reliability | changes
  *
  * `replay` folds captured real session frames through the real reducer;
  * `notify` additionally patches document.hidden and window.Notification and
@@ -22,6 +22,7 @@ import { SessionView } from "./components/SessionView.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { ModelPicker } from "./components/ModelPicker.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
+import { GuardAuditDialog } from "./components/GuardAuditDialog.tsx";
 import { ReliabilityDialog } from "./components/ReliabilityDialog.tsx";
 import { WorkspaceChangesDialog } from "./components/WorkspaceChangesDialog.tsx";
 import { REPLAY } from "./__replay.ts";
@@ -214,7 +215,7 @@ store.setState({
   connected: true,
   theme,
   conversation:
-    scene === "session" || scene === "changes"
+    scene === "session" || scene === "audit" || scene === "changes"
       ? {
           timeline,
           guardDecisions: [
@@ -445,6 +446,12 @@ createRoot(document.getElementById("root")!).render(
           plugins: { failures: 1 },
           integrity: { healthy: true, violations: [] },
         }}
+      />
+    )}
+    {scene === "audit" && (
+      <GuardAuditDialog
+        decisions={store.getState().conversation.guardDecisions}
+        onClose={() => {}}
       />
     )}
     {scene === "changes" && store.getState().conversation.workspaceChanges && (

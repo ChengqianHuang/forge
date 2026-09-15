@@ -115,6 +115,14 @@ former dedicated `SessionManager.reliability` method and HTTP endpoint were
 removed when this capability was registered; the kernel now knows only that a
 declared read action was requested.
 
+### Guard audit
+
+The required guard-audit capability contributes a session-header action that
+renders the `GUARD_DECISION` projection already folded from SSE. It needs no
+read action, server route or private state. Core guard evaluation and durable
+decision emission deliberately remain outside the capability: safety is
+kernel substrate, while its removable inspection surface is registered UI.
+
 ### Workspace changes
 
 The optional workspace-changes subscriber records a Git status baseline before

@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from "react";
 import { readCapability } from "../lib/api.ts";
 import type { ConversationView, PluginCapabilitySnapshot, ReliabilityMetrics, WorkspaceFileDiff } from "../types.ts";
+import { GuardAuditDialog } from "./GuardAuditDialog.tsx";
 import { ReliabilityDialog } from "./ReliabilityDialog.tsx";
 import { WorkspaceChangesDialog } from "./WorkspaceChangesDialog.tsx";
 
@@ -30,6 +31,18 @@ function WorkspaceChangesAction({ sessionId, pluginId, label, readAction, conver
             : undefined}
         />
       )}
+    </>
+  );
+}
+
+function GuardAuditAction({ label, conversation }: ActionProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="btn btn-ghost btn-small" onClick={() => setOpen(true)} title="Inspect durable guard decisions">
+        {label} {conversation.guardDecisions.length}
+      </button>
+      {open && <GuardAuditDialog decisions={conversation.guardDecisions} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -72,6 +85,7 @@ function ReliabilityAction({ sessionId, pluginId, label, readAction }: ActionPro
 }
 
 const RENDERERS: Record<string, ComponentType<ActionProps>> = {
+  "guard-audit": GuardAuditAction,
   reliability: ReliabilityAction,
   "workspace-changes": WorkspaceChangesAction,
 };

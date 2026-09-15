@@ -78,8 +78,10 @@ out of the durable event log without adding feature-specific server routes.
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
 second decision under its own guard id. The desktop audit panel folds those
-events by stable decision id. Reconnect replay is idempotent and never invokes
-the policy evaluator again.
+events by stable decision id. Its button and panel belong to the required
+`forge.guard-audit` UI capability; guard execution and durable evidence remain
+kernel-owned. Reconnect replay is idempotent and never invokes the policy
+evaluator again.
 
 The JSONL append path checks an existing crash tail before the first write in
 each process. A complete final record missing only its newline is preserved;

@@ -6,7 +6,6 @@ import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
 import type {
   ApprovalMode,
-  GuardDecisionView,
   PluginCapabilitySnapshot,
   ThinkingLevel,
   TimelineEntry,
@@ -107,44 +106,6 @@ function EmptyConversation({ running }: { running: boolean }) {
   );
 }
 
-const GUARD_OUTCOME_LABEL: Record<GuardDecisionView["outcome"], string> = {
-  allowed: "自动放行",
-  approved: "已批准",
-  rejected: "已拒绝",
-  denied: "策略阻止",
-  aborted: "已中止",
-};
-
-function GuardAudit({ decisions }: { decisions: GuardDecisionView[] }) {
-  if (decisions.length === 0) {
-    return <div className="audit-empty">此会话还没有可审计的工具决策。</div>;
-  }
-  return (
-    <div className="audit-list">
-      {[...decisions].reverse().map((decision) => (
-        <article className="audit-row" key={decision.decisionId}>
-          <div className="audit-row-head">
-            <span className="audit-outcome" data-outcome={decision.outcome}>
-              {GUARD_OUTCOME_LABEL[decision.outcome]}
-            </span>
-            <strong>{decision.toolName}</strong>
-            <span className="audit-capability">{decision.capability}</span>
-            <time>{new Date(decision.at).toLocaleTimeString()}</time>
-          </div>
-          {decision.inputSummary && <code className="audit-input">{decision.inputSummary}</code>}
-          <div className="audit-meta">
-            <span>Guard {decision.guardId}</span>
-            <span>规则 {decision.ruleId ?? "policy default"}</span>
-            <span>依据 {decision.basis}</span>
-            <span>审批级别 {decision.approvalMode}</span>
-          </div>
-          <div className="audit-reason">{decision.reason}</div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 export function SessionView({
   sessionId,
   goal,
@@ -174,7 +135,6 @@ export function SessionView({
   const resume = store((s) => s.resume);
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
-  const [auditOpen, setAuditOpen] = useState(false);
   const [resumeMessage, setResumeMessage] = useState("");
   const [pluginCapabilities, setPluginCapabilities] = useState<PluginCapabilitySnapshot | null>(null);
   const { providers, capabilities, contextWindows } = useModelCatalog();
@@ -322,13 +282,6 @@ export function SessionView({
           <TokenMeter usage={conversation.usage} contextWindow={contextWindow} />
           <div className="head-actions">
             <SessionCapabilityActions sessionId={sessionId} capabilities={pluginCapabilities} conversation={conversation} />
-            <button
-              className="btn btn-ghost btn-small"
-              onClick={() => setAuditOpen(true)}
-              title="Inspect durable guard decisions"
-            >
-              审计 {conversation.guardDecisions.length}
-            </button>
             {resumable && (
               <button
                 className="btn btn-primary btn-small"
@@ -344,32 +297,6 @@ export function SessionView({
           </div>
         </div>
       </header>
-
-      {auditOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setAuditOpen(false);
-          }}
-        >
-          <div className="modal modal-lg audit-modal">
-            <div className="modal-head">
-              <div>
-                <h3 className="modal-title">Guard 审计</h3>
-                <div className="modal-sub">
-                  来自事件日志的最终决策，不重新执行或推测历史策略。
-                </div>
-              </div>
-              <button className="btn btn-ghost btn-small" onClick={() => setAuditOpen(false)}>
-                关闭
-              </button>
-            </div>
-            <div className="modal-scroll">
-              <GuardAudit decisions={conversation.guardDecisions} />
-            </div>
-          </div>
-        </div>
-      )}
 
       {resumeOpen && (
         <div
