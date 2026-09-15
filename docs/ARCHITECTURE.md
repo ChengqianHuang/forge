@@ -75,6 +75,13 @@ and validation; the kernel knows only plugin id, action id, session context and
 timeout. Large or transient views such as a per-file Git patch therefore stay
 out of the durable event log without adding feature-specific server routes.
 
+Capability lifecycle is projected by `forge.capability-health`. The desktop
+folds ordered `PLUGIN_*` events into current state plus an inspection history;
+the server capability snapshot supplies manifest metadata and truthful live or
+disposed status. Required failures are shown as mechanism degradation, while
+optional failures are shown as isolated and do not stop the agent loop. No
+automatic retry or parallel health store is introduced.
+
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
 second decision under its own guard id. The desktop audit panel folds those

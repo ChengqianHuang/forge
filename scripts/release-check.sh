@@ -60,6 +60,7 @@ check "usage tracker tests"     "cd $ROOT && node --import tsx --test src/guardr
 check "reliability metrics"     "cd $ROOT && node --import tsx --test src/reliability/metrics.test.ts"
 check "protocol consistency"   "cd $ROOT && node --import tsx --test tests/protocol-consistency.test.ts"
 check "guard audit projection" "cd $ROOT && node --import tsx --test tests/guard-audit-projection.test.ts"
+check "capability health projection" "cd $ROOT && node --import tsx --test tests/capability-health-projection.test.ts"
 check "workspace changes projection" "cd $ROOT && node --import tsx --test tests/workspace-changes-projection.test.ts"
 check "compaction tests"     "cd $ROOT && node --import tsx --test src/guardrails/compaction.test.ts"
 check "plugin platform tests" "cd $ROOT && node --import tsx --test src/plugins/*.test.ts src/plugins/builtins/*.test.ts"

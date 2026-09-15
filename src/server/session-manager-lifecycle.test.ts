@@ -12,6 +12,8 @@ import { readEvents } from "../core/persistence/event-log.ts";
 import type { runAgent } from "../agent-runner.ts";
 import type { Session } from "../types.ts";
 import { extractReliabilityMetrics } from "../reliability/metrics.ts";
+import { PluginRegistry } from "../plugins/registry.ts";
+import type { AgentEvent } from "@earendil-works/pi-agent-core";
 
 let forgeHome = "";
 let previousSessionsDir: string | undefined;
@@ -149,4 +151,40 @@ test("startup repair turns an orphaned running record into a resumable failure e
   const events = await readEvents(id);
   assert.equal(events.filter((event) => event.type === "SESSION_INTERRUPTED").length, 1);
   assert.equal(events.filter((event) => event.type === "SESSION_FAILED").length, 1);
+});
+
+test("an optional plugin failure is isolated while the agent run completes", async () => {
+  const plugins = new PluginRegistry();
+  let healthyEvents = 0;
+  plugins.register({
+    manifest: { id: "test.crashing-optional", name: "crashing", version: "1", capabilities: ["event-subscriber"] },
+    activate: () => ({ onAgentEvent: () => { throw new Error("subscriber boom"); } }),
+  });
+  plugins.register({
+    manifest: { id: "test.healthy", name: "healthy", version: "1", capabilities: ["event-subscriber"] },
+    activate: () => ({ onAgentEvent: () => { healthyEvents += 1; } }),
+  });
+  const agentRunner: typeof runAgent = async (opts) => {
+    await opts.plugins?.onAgentEvent({ type: "agent_start" } as AgentEvent);
+    return { ...opts.session, status: "completed", failureReason: null };
+  };
+  const manager = new SessionManager({
+    forgeHome,
+    projects: new ProjectsRegistry(forgeHome),
+    approvalHub: new ApprovalHub(),
+    plugins,
+    agentRunner,
+  });
+
+  const { sessionId } = await manager.create({ goal: "continue after optional plugin failure" });
+  for (let attempt = 0; attempt < 20 && (await loadSession(sessionId))?.status === "running"; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal((await loadSession(sessionId))?.status, "completed");
+  assert.equal(healthyEvents, 1);
+  const failure = (await readEvents(sessionId)).find((event) =>
+    event.type === "PLUGIN_FAILED" && event.payload.pluginId === "test.crashing-optional"
+  );
+  assert.equal(failure?.payload.required, false);
+  assert.equal(failure?.payload.phase, "onAgentEvent");
 });

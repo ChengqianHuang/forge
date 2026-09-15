@@ -6,7 +6,7 @@
  * plain browser without the Tauri sidecar.
  * Open /preview.html?scene=<name>&theme=<dark|light>
  *
- * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | audit | reliability | changes
+ * Scenes: session | thinking | landing | empty | settings | replay | notify | picker | health | audit | reliability | changes
  *
  * `replay` folds captured real session frames through the real reducer;
  * `notify` additionally patches document.hidden and window.Notification and
@@ -22,6 +22,7 @@ import { SessionView } from "./components/SessionView.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { ModelPicker } from "./components/ModelPicker.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
+import { CapabilityHealthDialog } from "./components/CapabilityHealthDialog.tsx";
 import { GuardAuditDialog } from "./components/GuardAuditDialog.tsx";
 import { ReliabilityDialog } from "./components/ReliabilityDialog.tsx";
 import { WorkspaceChangesDialog } from "./components/WorkspaceChangesDialog.tsx";
@@ -215,7 +216,7 @@ store.setState({
   connected: true,
   theme,
   conversation:
-    scene === "session" || scene === "audit" || scene === "changes"
+    scene === "session" || scene === "health" || scene === "audit" || scene === "changes"
       ? {
           timeline,
           guardDecisions: [
@@ -249,7 +250,16 @@ store.setState({
           approvalMode: "default",
           modelId: null,
           thinkingLevel: null,
-          pluginStates: {},
+          pluginStates: scene === "health"
+            ? { "forge.workspace-changes": { status: "failed", failurePhase: "onAgentEvent", failureReason: "git status timed out after 4000ms" } }
+            : {},
+          pluginLifecycle: scene === "health"
+            ? [
+                { id: "p1", pluginId: "forge.usage", event: "loaded", status: "active", required: true, at: now - 21_000 },
+                { id: "p2", pluginId: "forge.workspace-changes", event: "loaded", status: "active", required: false, at: now - 20_000 },
+                { id: "p3", pluginId: "forge.workspace-changes", event: "failed", status: "failed", required: false, phase: "onAgentEvent", reason: "git status timed out after 4000ms", at: now - 4_000 },
+              ]
+            : [],
           workspaceChanges: {
             supported: true,
             repoRoot: "/Users/hcq/demo",
@@ -276,6 +286,7 @@ store.setState({
               modelId: null,
               thinkingLevel: null,
               pluginStates: {},
+              pluginLifecycle: [],
               workspaceChanges: null,
             }
           : {
@@ -287,6 +298,7 @@ store.setState({
               modelId: null,
               thinkingLevel: null,
               pluginStates: {},
+              pluginLifecycle: [],
               workspaceChanges: null,
             },
 });
@@ -451,6 +463,24 @@ createRoot(document.getElementById("root")!).render(
     {scene === "audit" && (
       <GuardAuditDialog
         decisions={store.getState().conversation.guardDecisions}
+        onClose={() => {}}
+      />
+    )}
+    {scene === "health" && (
+      <CapabilityHealthDialog
+        plugins={[
+          { id: "forge.usage", name: "Usage meter", version: "1.0.0", capabilities: ["guardrail", "event-subscriber", "ui"], required: true, status: "active" },
+          { id: "forge.capability-health", name: "Capability Health", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
+          { id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
+          { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
+          { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "ui"], required: false, status: "failed" },
+        ]}
+        states={store.getState().conversation.pluginStates}
+        lifecycle={store.getState().conversation.pluginLifecycle}
+        running
+        busyPluginId={null}
+        error={null}
+        onToggle={() => {}}
         onClose={() => {}}
       />
     )}

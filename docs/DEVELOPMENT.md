@@ -53,7 +53,8 @@ npm run dev
 ```
 
 Available scenes are defined by `desktop/src/preview.tsx`; `hover=1` reveals
-hover-only controls. `scene=audit` opens the Guard decision projection,
+hover-only controls. `scene=health` opens the capability lifecycle panel,
+`scene=audit` opens the Guard decision projection,
 `scene=reliability` opens the event-derived diagnostics modal and
 `scene=changes` opens the registered workspace-change contribution.
 

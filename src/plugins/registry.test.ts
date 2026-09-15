@@ -185,18 +185,21 @@ describe("PluginRegistry", () => {
 
   test("session enable/disable takes effect on already-projected tools", async () => {
     const registry = new PluginRegistry();
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
     registry.register({
       manifest: { id: "test.toggle", name: "toggle", version: "1", capabilities: ["tool"] },
       activate: () => ({ tools: [
         { name: "extra", label: "extra", description: "extra", parameters: {} as never, execute: async () => ({ content: [], details: { ok: true } }) },
       ] }),
     });
-    const host = await registry.activate(context([]));
+    const host = await registry.activate(context(events));
     const tool = host.tools()[0]!;
     await host.setEnabled("test.toggle", false);
     await assert.rejects(() => tool.execute("1", {}), /disabled/);
     await host.setEnabled("test.toggle", true);
     assert.deepEqual((await tool.execute("2", {})).details, { ok: true });
+    assert.equal(events.find((event) => event.type === "PLUGIN_DISABLED")?.payload.required, false);
+    assert.equal(events.find((event) => event.type === "PLUGIN_ENABLED")?.payload.required, false);
   });
 
   test("session enable/disable takes effect on already-composed hooks", async () => {

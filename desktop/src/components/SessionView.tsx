@@ -281,7 +281,12 @@ export function SessionView({
           <h1 className="session-goal" title={goal}>{goal}</h1>
           <TokenMeter usage={conversation.usage} contextWindow={contextWindow} />
           <div className="head-actions">
-            <SessionCapabilityActions sessionId={sessionId} capabilities={pluginCapabilities} conversation={conversation} />
+            <SessionCapabilityActions
+              sessionId={sessionId}
+              capabilities={pluginCapabilities}
+              conversation={conversation}
+              running={running}
+            />
             {resumable && (
               <button
                 className="btn btn-primary btn-small"
@@ -437,60 +442,6 @@ export function SessionView({
                   onSelectApprovalMode={(mode) => void onApprovalSwitch(mode)}
                   placement="above"
                 />
-                {(pluginCapabilities?.plugins.length ?? 0) > 0 && (
-                  <details className="plugin-picker">
-                    <summary>{pluginCapabilities!.plugins.length} 插件</summary>
-                    <div className="plugin-panel">
-                      {pluginCapabilities!.plugins.map((plugin) => {
-                        const state = conversation.pluginStates[plugin.id] ?? plugin;
-                        const pluginStatus = state.status;
-                        const detail = state.failureReason
-                          ? `${state.failurePhase ?? "unknown"}: ${state.failureReason}`
-                          : plugin.capabilities.join(" · ");
-                        return (
-                          <label key={plugin.id} className="plugin-option" title={detail}>
-                            <input
-                              type="checkbox"
-                              checked={pluginStatus === "active"}
-                              disabled={!running || plugin.required || pluginStatus === "failed"}
-                              onChange={async (event) => {
-                                const enabled = event.target.checked;
-                                try {
-                                  const { fetchPluginCapabilities, setSessionPluginEnabled } = await import("../lib/api.ts");
-                                  await setSessionPluginEnabled(sessionId, plugin.id, enabled);
-                                  store.setState((current) => ({
-                                    conversation: {
-                                      ...current.conversation,
-                                      pluginStates: {
-                                        ...current.conversation.pluginStates,
-                                        [plugin.id]: { status: enabled ? "active" : "disabled" },
-                                      },
-                                    },
-                                  }));
-                                  setPluginCapabilities(await fetchPluginCapabilities(sessionId));
-                                } catch (err) {
-                                  console.error("plugin switch failed:", err);
-                                }
-                              }}
-                            />
-                            <span>{plugin.name}</span>
-                            <span className="plugin-state">
-                              {pluginStatus === "failed"
-                                ? "已隔离"
-                                : plugin.required
-                                  ? "必需"
-                                  : pluginStatus === "active"
-                                    ? "运行中"
-                                    : pluginStatus === "disabled"
-                                      ? "已暂停"
-                                      : "已释放"}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
                 {!connected && (
                   <span className="meta-item meta-warn" title="Live event stream is reconnecting…">
                     <span className="status-dot" data-tone="warn" />

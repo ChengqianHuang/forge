@@ -115,6 +115,20 @@ former dedicated `SessionManager.reliability` method and HTTP endpoint were
 removed when this capability was registered; the kernel now knows only that a
 declared read action was requested.
 
+### Capability health
+
+The required capability-health module owns the desktop lifecycle panel and the
+optional-capability enable/disable control. It renders the current registry
+snapshot together with the ordered `PLUGIN_*` facts already folded from SSE;
+there is no health database and no polling protocol.
+
+New failure events carry the manifest's `required` flag. The timeline and panel
+therefore distinguish a required mechanism failure (Forge is degraded) from an
+optional capability failure (that capability is isolated and the agent keeps
+running). Historical events without the flag remain neutral rather than being
+guessed. The panel never retries a failed plugin in place; a later session run
+creates a fresh instance through the normal lifecycle.
+
 ### Guard audit
 
 The required guard-audit capability contributes a session-header action that

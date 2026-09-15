@@ -334,7 +334,7 @@ Every guardrail must have a UI entry point.
 | Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |
 | Reasoning effort | Composer/ModelPicker level select (`thinkingLevel`, labelled 关/极低/低/中/高/极高/最大) — hidden when the model is not a reasoner |
 | Abort/resume | Stop button + Resume button (completed = follow-up) |
-| Capability lifecycle | Session capability panel (required/optional + active/disabled/failed/disposed) |
+| Capability lifecycle | Registered Capability Health panel (required/optional + active/disabled/failed/disposed + lifecycle) |
 | Guard decision history | Registered session-header contribution, projected from `GUARD_DECISION` events |
 
 The run-config popover holds **two orthogonal axes**. Do not merge them into
@@ -382,7 +382,7 @@ To see the UI without launching the app, use the dev-only harness
 
 ```
 cd desktop && npm run dev
-# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker|audit|reliability|changes>&theme=<dark|light>
+# /preview.html?scene=<session|thinking|landing|empty|settings|replay|notify|picker|health|audit|reliability|changes>&theme=<dark|light>
 # add &hover=1 to reveal hover-only affordances (a screenshot cannot hover)
 ```
 

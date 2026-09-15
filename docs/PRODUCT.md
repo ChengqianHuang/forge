@@ -188,8 +188,8 @@ If those answers are unclear, the feature is not ready to enter the kernel.
 
 The next phase should deepen the platform through real Forge capabilities,
 not expand the abstraction surface in advance. Registry lifecycle and
-session-scoped capability status and guard-decision inspection are now
-established. Cancellation, bounded cleanup, honest restart repair and
+session-scoped capability status, lifecycle inspection and guard-decision
+inspection are now established. Cancellation, bounded cleanup, honest restart repair and
 event-derived harness reliability metrics are now part of the recovery
 baseline. Further work should add real Forge capabilities driven by desktop
 needs, using these measurements to protect the kernel without grading model

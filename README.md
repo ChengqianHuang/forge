@@ -58,6 +58,11 @@ Guard Audit is an event-projected UI capability: it renders the durable guard
 decisions already present in the desktop conversation projection, while guard
 execution remains required kernel safety.
 
+Capability Health completes the lifecycle surface: it combines registry
+metadata with ordered `PLUGIN_*` events, exposes optional capability controls,
+and distinguishes required degradation from isolated optional failures without
+adding a second health store or retry state machine.
+
 Plugin failures are isolated to that plugin in that session. Core safety hooks
 run first, built-in tool names cannot be shadowed, and MCP tools follow the same
 approval path as built-ins. See [the internal registry](docs/INTERNAL-PLUGINS.md).

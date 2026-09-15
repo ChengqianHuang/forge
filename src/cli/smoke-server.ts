@@ -130,17 +130,22 @@ async function main(): Promise<void> {
     };
     const commandNames = pluginCaps.slashCommands.map((command) => command.name);
     const usage = pluginCaps.plugins.find((plugin) => plugin.id === "forge.usage");
+    const capabilityHealth = pluginCaps.plugins.find((plugin) => plugin.id === "forge.capability-health");
     const guardAudit = pluginCaps.plugins.find((plugin) => plugin.id === "forge.guard-audit");
     const reliabilityPlugin = pluginCaps.plugins.find((plugin) => plugin.id === "forge.reliability");
     const workspaceChanges = pluginCaps.plugins.find((plugin) => plugin.id === "forge.workspace-changes");
     ok = ok && ["compact", "status", "context"].every((name) => commandNames.includes(name));
     ok = ok && usage?.required === true && ["active", "failed"].includes(usage.status);
+    ok = ok && capabilityHealth?.required === true && ["active", "failed"].includes(capabilityHealth.status);
     ok = ok && guardAudit?.required === true && ["active", "failed"].includes(guardAudit.status);
     ok = ok && reliabilityPlugin?.required === true && ["active", "failed"].includes(reliabilityPlugin.status);
     ok = ok && workspaceChanges?.required === false;
     const capsWithUi = pluginCaps as typeof pluginCaps & {
       uiContributions?: Array<{ pluginId: string; renderer: string; readAction?: string }>;
     };
+    ok = ok && capsWithUi.uiContributions?.some((item) =>
+      item.pluginId === "forge.capability-health" && item.renderer === "capability-health"
+    ) === true;
     ok = ok && capsWithUi.uiContributions?.some((item) =>
       item.pluginId === "forge.guard-audit" && item.renderer === "guard-audit" && item.readAction === undefined
     ) === true;

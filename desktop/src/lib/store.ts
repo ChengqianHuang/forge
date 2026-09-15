@@ -63,6 +63,7 @@ const emptyConversation = (): ConversationView => ({
   modelId: null,
   thinkingLevel: null,
   pluginStates: {},
+  pluginLifecycle: [],
   workspaceChanges: null,
 });
 
@@ -106,10 +107,10 @@ function readMessage(message: unknown): {
 type Timeline = ConversationView["timeline"];
 
 /** Append, or update in place when an entry with the same id already exists. */
-function upsert(timeline: Timeline, entry: Timeline[number]): Timeline {
-  const at = timeline.findIndex((e) => e.id === entry.id);
-  if (at < 0) return [...timeline, entry];
-  const out = [...timeline];
+function upsert<T extends { id: string }>(items: T[], entry: T): T[] {
+  const at = items.findIndex((item) => item.id === entry.id);
+  if (at < 0) return [...items, entry];
+  const out = [...items];
   out[at] = entry;
   return out;
 }
@@ -391,6 +392,20 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
         ...conversation.pluginStates,
         [pluginId]: { status },
       };
+      const event = env.type === "PLUGIN_LOADED"
+        ? "loaded"
+        : env.type === "PLUGIN_ENABLED"
+          ? "enabled"
+          : "disabled";
+      conversation.pluginLifecycle = upsert(conversation.pluginLifecycle, {
+        id: `plugin-${env.type}-${pluginId}-${stamp}`,
+        pluginId,
+        event,
+        status,
+        required: typeof payload.required === "boolean" ? payload.required : null,
+        ...(typeof payload.reason === "string" ? { reason: payload.reason } : {}),
+        at: Number(env.timestamp ?? env.at ?? Date.now()),
+      });
       return { conversation };
     }
 
@@ -404,12 +419,28 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
           failureReason: String(payload.reason ?? "unknown error"),
         },
       };
+      const required = typeof payload.required === "boolean" ? payload.required : null;
+      conversation.pluginLifecycle = upsert(conversation.pluginLifecycle, {
+        id: `plugin-${env.type}-${pluginId}-${stamp}`,
+        pluginId,
+        event: "failed",
+        status: "failed",
+        required,
+        phase: String(payload.phase ?? "unknown"),
+        reason: String(payload.reason ?? "unknown error"),
+        at: Number(env.timestamp ?? env.at ?? Date.now()),
+      });
+      const failureText = required === true
+        ? `必需能力 ${pluginId} 失败，Forge 机制已降级：${String(payload.reason ?? "unknown error")}`
+        : required === false
+          ? `可选能力 ${pluginId} 已隔离，Agent 继续运行：${String(payload.reason ?? "unknown error")}`
+          : `插件 ${pluginId} 已隔离：${String(payload.reason ?? "unknown error")}`;
       conversation.timeline = upsert(conversation.timeline, {
         kind: "notice",
         id: `plugin-failed-${stamp}`,
         tone: "warn",
         icon: "⚠",
-        text: `插件 ${pluginId} 已隔离：${String(payload.reason ?? "unknown error")}`,
+        text: failureText,
       });
       return { conversation };
     }

@@ -138,6 +138,17 @@ export interface GuardDecisionView {
   at: number;
 }
 
+export interface PluginLifecycleView {
+  id: string;
+  pluginId: string;
+  event: "loaded" | "enabled" | "disabled" | "failed";
+  status: "active" | "disabled" | "failed";
+  required: boolean | null;
+  phase?: string;
+  reason?: string;
+  at: number;
+}
+
 /**
  * One entry in the session transcript.
  *
@@ -184,6 +195,8 @@ export interface ConversationView {
     failurePhase?: string;
     failureReason?: string;
   }>;
+  /** Ordered lifecycle facts folded from the same durable PLUGIN_* events. */
+  pluginLifecycle: PluginLifecycleView[];
   /** Latest WORKSPACE_CHANGES projection from the optional built-in plugin. */
   workspaceChanges: WorkspaceChangesView | null;
 }

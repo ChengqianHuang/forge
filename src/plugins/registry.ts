@@ -195,6 +195,7 @@ export class PluginRegistry {
           } catch (disposeError) {
             await context.emitEvent("PLUGIN_FAILED", {
               pluginId: plugin.manifest.id,
+              required: plugin.manifest.required === true,
               phase: "activation-rollback",
               reason: disposeError instanceof Error ? disposeError.message : String(disposeError),
             }).catch(() => {});
@@ -221,6 +222,7 @@ export class PluginRegistry {
             } catch (lateError) {
               await context.emitEvent("PLUGIN_FAILED", {
                 pluginId: plugin.manifest.id,
+                required: plugin.manifest.required === true,
                 phase: "late-activation-dispose",
                 reason: lateError instanceof Error ? lateError.message : String(lateError),
               }).catch(() => {});
@@ -229,6 +231,7 @@ export class PluginRegistry {
         }
         await context.emitEvent("PLUGIN_FAILED", {
           pluginId: plugin.manifest.id,
+          required: plugin.manifest.required === true,
           phase: "activate",
           reason: error instanceof Error ? error.message : String(error),
         });
@@ -400,11 +403,19 @@ export class PluginHost {
       if (!this.disabled.has(pluginId)) return;
       this.disabled.delete(pluginId);
       state.status = "active";
-      await this.context.emitEvent("PLUGIN_ENABLED", { pluginId, reason: "enabled by user" });
+      await this.context.emitEvent("PLUGIN_ENABLED", {
+        pluginId,
+        required: state.manifest.required === true,
+        reason: "enabled by user",
+      });
     } else if (!this.disabled.has(pluginId)) {
       this.disabled.add(pluginId);
       state.status = "disabled";
-      await this.context.emitEvent("PLUGIN_DISABLED", { pluginId, reason: "disabled by user" });
+      await this.context.emitEvent("PLUGIN_DISABLED", {
+        pluginId,
+        required: state.manifest.required === true,
+        reason: "disabled by user",
+      });
     }
   }
 
@@ -420,6 +431,7 @@ export class PluginHost {
     }
     await this.context.emitEvent("PLUGIN_FAILED", {
       pluginId,
+      required: state?.manifest.required === true,
       phase,
       reason: error instanceof Error ? error.message : String(error),
     }).catch(() => {});
@@ -449,6 +461,7 @@ export class PluginHost {
       }
       await this.context.emitEvent("PLUGIN_FAILED", {
         pluginId,
+        required: state?.manifest.required === true,
         phase,
         reason: error instanceof Error ? error.message : String(error),
       }).catch(() => {});
