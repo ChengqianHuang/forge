@@ -8,8 +8,8 @@ import type { GuardrailConfig } from "./types.ts";
 
 /**
  * After-tool guardrail: stuck detection over the tool-call history. A stuck
- * pattern terminates the session immediately — burning budget on a loop is
- * the worst failure mode (the stuck guard is the other stopper).
+ * pattern terminates the session immediately so repeated tool calls cannot
+ * keep a run alive indefinitely.
  */
 export function makeAfterToolCall(config: GuardrailConfig) {
   const stuckDetector = new StuckDetector();

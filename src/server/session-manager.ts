@@ -11,6 +11,9 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 function idleTimeoutMs(): number {
   return Number(process.env.FORGE_IDLE_TIMEOUT_MS ?? 5 * 60_000);
 }
+function watchdogIntervalMs(): number {
+  return Math.min(30_000, Math.max(250, Math.floor(idleTimeoutMs() / 4)));
+}
 function cancelGraceMs(): number {
   return Number(process.env.FORGE_CANCEL_GRACE_MS ?? 3_000);
 }
@@ -50,17 +53,15 @@ import type {
   ThinkingLevel,
 } from "../types.ts";
 import { UsageTracker } from "../guardrails/usage-tracker.ts";
+import type { GuardrailConfig } from "../guardrails/types.ts";
 import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
 import type { PluginCapabilitySnapshot } from "../plugins/types.ts";
 import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 
 /**
- * Everything that exists only while one run of a session is live. The
- * SessionManager used to keep five parallel per-session maps (active / idle /
- * pendingModels / pendingThinking / completions); they are now fields on this
- * one object so a runtime can be registered and dropped as a unit — no map to
- * forget, no entry to leak.
+ * Everything that exists only while one run of a session is live. Keeping it
+ * on one object lets a runtime be registered and dropped as a unit.
  */
 type SessionRuntime = {
   runPromise: Promise<Session>;
@@ -74,15 +75,14 @@ type SessionRuntime = {
   /** True when the watchdog (not the user) aborted the run. */
   timedOut?: boolean;
   steeringQueue: AgentMessage[];
-  usage: import("../guardrails/usage-tracker.ts").UsageTracker;
+  usage: UsageTracker;
   plugins: PluginHost;
-  forceCompaction: boolean;
   /**
    * The guardrails object handed to `runAgent` — kept live on the runtime so
    * `switchApprovalMode()` can mutate `guardrails.approvalMode` and the very
    * next tool call sees the new posture (no turn boundary, no relaunch).
    */
-  guardrails: import("../guardrails/types.ts").GuardrailConfig;
+  guardrails: GuardrailConfig;
   /**
    * Mid-session model switch: `switchModel()` parks a pre-built Model here;
    * the prepareNextTurn hook picks it up at the next turn boundary and hands
@@ -218,8 +218,7 @@ export class SessionManager {
    * Resume a failed or cancelled session from its event log. Replays the
    * last coherent AgentMessage[] (drops any unterminated message_started
    * pair), restores the UsageTracker's spent counter from persisted
-   * `session.cost.total`, and re-launches the agent loop on the recovered
-   * session.
+   * `session.usage`, and re-launches the agent loop on the recovered session.
    *
    * If `opts.message` is provided, it has exactly one owner: completed-session
    * follow-ups become the new run prompt; failed/cancelled-session guidance
@@ -321,7 +320,7 @@ export class SessionManager {
   /**
    * Mid-session model switch. Running sessions: the new model takes effect
    * at the next turn boundary (the prepareNextTurn hook consumes it from
-   * pendingModels and returns it as AgentLoopTurnUpdate.model). Idle
+   * pendingModel and returns it as AgentLoopTurnUpdate.model). Idle
    * sessions: persisted on the Session, effective on the next resume.
    */
   async switchModel(
@@ -437,7 +436,7 @@ export class SessionManager {
     // correction until after an unwanted model turn.
     const steeringQueue: AgentMessage[] = initialSteering ? [initialSteering] : [];
     const controller = new AbortController();
-    let forceCompaction = false;
+    let compactionRequested = false;
     let acceptEvents = true;
     const emitEvent = (type: Parameters<typeof appendEvent>[1], payload: Record<string, unknown>) =>
       acceptEvents
@@ -449,12 +448,12 @@ export class SessionManager {
       signal: controller.signal,
       emitEvent: (type, payload) => emitEvent(type as Parameters<typeof appendEvent>[1], payload),
       enqueueSteering: (message) => steeringQueue.push(message),
-      requestCompaction: () => { forceCompaction = true; },
+      requestCompaction: () => { compactionRequested = true; },
     }, { disabledPluginIds });
     // A missing/failed Usage plugin degrades to an inert tracker. The loop,
     // compaction's per-turn signal and all safety hooks continue to work.
     const usage = plugins.service<UsageTracker>("usage") ?? new UsageTracker();
-    const guardrails: import("../guardrails/types.ts").GuardrailConfig = {
+    const guardrails: GuardrailConfig = {
       sessionId,
       workspace: session.workspace,
       undoRoot: join(this.opts.forgeHome, "undo", sessionId),
@@ -474,7 +473,6 @@ export class SessionManager {
       guardrails,
       usage,
       plugins,
-      forceCompaction,
       pendingModel: null,
       pendingThinking: null,
       stopRequested: false,
@@ -496,7 +494,7 @@ export class SessionManager {
         runtime.controller.abort();
         this.clearWatchdog(runtime);
       }
-    }, 30_000);
+    }, watchdogIntervalMs());
     // Never keep the process alive for the watchdog alone.
     runtime.watchdog.unref();
 
@@ -522,9 +520,8 @@ export class SessionManager {
         return pending;
       },
       takeCompactionRequest: () => {
-        const requested = forceCompaction || runtime.forceCompaction;
-        forceCompaction = false;
-        runtime.forceCompaction = false;
+        const requested = compactionRequested;
+        compactionRequested = false;
         return requested;
       },
       plugins,
@@ -564,7 +561,6 @@ export class SessionManager {
     const live = this.runtimes.get(sessionId);
     if (live) {
       const result = await live.plugins.execute(commandLine);
-      if (commandLine.trim().toLowerCase().startsWith("/compact")) live.forceCompaction = true;
       return { ok: true, message: result.message };
     }
     const session = await loadSession(sessionId);
@@ -672,11 +668,11 @@ export class SessionManager {
   }
 
   async approve(sessionId: string, requestId: string): Promise<{ ok: boolean }> {
-    return { ok: this.opts.approvalHub.mark(requestId, "approved") };
+    return { ok: this.opts.approvalHub.markForSession(sessionId, requestId, "approved") };
   }
 
   async deny(sessionId: string, requestId: string): Promise<{ ok: boolean }> {
-    return { ok: this.opts.approvalHub.mark(requestId, "denied") };
+    return { ok: this.opts.approvalHub.markForSession(sessionId, requestId, "denied") };
   }
 
   private clearWatchdog(runtime: SessionRuntime): void {

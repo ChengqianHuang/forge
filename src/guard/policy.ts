@@ -315,7 +315,7 @@ function describe(rule: GuardRule, toolName: string): string {
 }
 
 /** Compact one-line summary of a tool call for approval UI. */
-export function summarizeInput(toolName: string, input: Record<string, unknown>): string {
+export function summarizeInput(input: Record<string, unknown>): string {
   const s = JSON.stringify(input);
   return s.length > 300 ? `${s.slice(0, 297)}…` : s;
 }

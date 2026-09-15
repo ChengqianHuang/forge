@@ -60,6 +60,13 @@ export class ApprovalHub {
     return true;
   }
 
+  /** Resolve only when the request belongs to the session named by the URL. */
+  markForSession(sessionId: string, requestId: string, status: ApprovalStatus): boolean {
+    const record = this.records.get(requestId);
+    if (!record || record.sessionId !== sessionId) return false;
+    return this.mark(requestId, status);
+  }
+
   /** Expire every unresolved approval owned by a session. Cancellation and
    * shutdown call this so no waiter or dialog survives the run it guarded. */
   cancelSession(sessionId: string): void {

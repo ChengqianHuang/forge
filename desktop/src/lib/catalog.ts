@@ -5,8 +5,7 @@ import type { ProviderConfig, ThinkingLevel } from "../types.ts";
 /**
  * The derived model catalog every picker needs: the subscriptions plus the
  * per-subscription thinking levels and context windows the server derives
- * from Pi's catalog. Composer and SessionView each used to fetch and derive
- * this themselves — two copies of the same wiring, drifting independently.
+ * from Pi's catalog. Composer and SessionView share this one projection.
  */
 export interface ModelCatalog {
   providers: ProviderConfig[];

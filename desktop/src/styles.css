@@ -314,24 +314,11 @@ body.preview-hover .session-del { display: inline-flex; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.status-chip {
-  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  font-size: 11.5px; font-weight: 600; text-transform: capitalize;
-  color: var(--text-secondary);
-  padding: 3px 10px 3px 8px;
-  border: 1px solid var(--border); border-radius: 99px;
-  white-space: nowrap;
-}
 .status-dot { width: 6px; height: 6px; border-radius: 99px; background: var(--text-muted); flex-shrink: 0; }
 .status-dot[data-tone="warn"] { background: var(--yellow); }
-.status-chip[data-status="running"] .status-dot { background: var(--accent); animation: dot-pulse 1.4s ease-in-out infinite; }
-.status-chip[data-status="completed"] .status-dot { background: var(--green); }
-.status-chip[data-status="failed"] .status-dot { background: var(--red); }
 
-.cost { font-size: 11.5px; font-family: var(--font-mono); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .tok { font-size: 11.5px; font-family: var(--font-mono); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.tok-ctx { color: var(--text-muted); font-weight: 400; }.cost-cap { opacity: 0.55; }
-.cost[data-tight="true"] { color: var(--yellow); }
+.tok-ctx { color: var(--text-muted); font-weight: 400; }
 
 .head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: 4px; }
 
@@ -638,21 +625,6 @@ body.preview-hover .session-del { display: inline-flex; }
 }
 .composer-hint b { font-weight: 600; color: var(--text-secondary); }
 
-/* --- changes panel (Diff) --- */
-.diff-panel { flex-shrink: 0; display: flex; flex-direction: column; max-height: 250px; border-top: 1px solid var(--border); }
-.diff-panel-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 6px var(--gutter) 4px;
-  font-size: 11.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.diff-panel-body {
-  margin: 0; padding: 0 var(--gutter) 12px;
-  overflow: auto;
-  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
-  color: var(--text-secondary); white-space: pre;
-}
-
 /* ==================== landing (no session selected) ==================== */
 .landing-wrap { flex: 1; min-height: 0; display: flex; overflow-y: auto; }
 .landing { margin: auto; width: 100%; max-width: 680px; padding: 40px 24px; }
@@ -660,20 +632,7 @@ body.preview-hover .session-del { display: inline-flex; }
   margin: 0 0 8px; font-size: 26px; font-weight: 700;
   letter-spacing: -0.022em; color: var(--text);
 }
-.landing-sub { margin: 0 0 18px; font-size: 13.5px; line-height: 1.65; color: var(--text-muted); max-width: 54ch; }
 .landing-error { color: var(--red); font-size: 12px; margin-top: 8px; }
-.landing-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.suggestion-chip {
-  font-family: inherit; font-size: 12.5px; color: var(--text-secondary);
-  background: transparent; border: 1px solid var(--border);
-  border-radius: 99px; padding: 6px 13px; cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
-}
-.suggestion-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  color: var(--text);
-}
 
 /* ==================== overlays ==================== */
 .modal-backdrop {

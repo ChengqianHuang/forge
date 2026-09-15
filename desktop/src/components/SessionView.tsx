@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { store } from "../lib/store.ts";
 import { useModelCatalog } from "../lib/catalog.ts";
+import {
+  fetchPluginCapabilities,
+  switchApprovalMode,
+  switchModel,
+  switchThinking,
+} from "../lib/api.ts";
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
@@ -166,12 +172,9 @@ export function SessionView({
 
   useEffect(() => {
     let alive = true;
-    void import("../lib/api.ts").then(({ fetchPluginCapabilities }) =>
-      fetchPluginCapabilities(sessionId).then((value) => {
-        if (!alive) return;
-        setPluginCapabilities(value);
-      }).catch(() => {}),
-    );
+    void fetchPluginCapabilities(sessionId).then((value) => {
+      if (alive) setPluginCapabilities(value);
+    }).catch(() => {});
     return () => { alive = false; };
   }, [sessionId]);
 
@@ -199,12 +202,9 @@ export function SessionView({
   };
 
   const onModelSwitch = async (nextProviderId: string) => {
-    // Both sides are provider ids now. This used to compare the incoming
-    // provider id against the MODEL id — a guard that never matched.
     if (!nextProviderId || nextProviderId === effectiveProviderId) return;
     try {
-      const { switchModel } = await import("../lib/api.ts");
-      await switchModel(sessionId, providerId);
+      await switchModel(sessionId, nextProviderId);
     } catch (err) {
       console.error("model switch failed:", err);
     }
@@ -215,7 +215,6 @@ export function SessionView({
   const onThinkingSwitch = async (level: ThinkingLevel) => {
     if (level === effectiveThinking) return;
     try {
-      const { switchThinking } = await import("../lib/api.ts");
       await switchThinking(sessionId, level);
     } catch (err) {
       console.error("thinking switch failed:", err);
@@ -227,7 +226,6 @@ export function SessionView({
   const onApprovalSwitch = async (mode: ApprovalMode) => {
     if (mode === effectiveApprovalMode) return;
     try {
-      const { switchApprovalMode } = await import("../lib/api.ts");
       await switchApprovalMode(sessionId, mode);
     } catch (err) {
       console.error("approval switch failed:", err);

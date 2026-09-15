@@ -99,26 +99,11 @@ export interface EventEnvelope {
   timestamp?: number;
 }
 
-/** Tool call as rendered in the conversation stream. */
-export interface ToolCallView {
-  toolCallId: string;
-  toolName: string;
-  args: unknown;
-  result?: unknown;
-  isError?: boolean;
-  running: boolean;
-}
-
 export interface ApprovalRecordView {
   requestId: string;
   toolName: string;
   message: string;
   at: number;
-}
-
-export interface StuckWarningView {
-  pattern: string;
-  repetitions: number;
 }
 
 export interface GuardDecisionView {

@@ -84,12 +84,11 @@ export class McpStdioClient implements McpClient {
       resolveDone();
     });
     if (signal?.aborted) throw signal.reason;
-    const initialized = await this.request("initialize", {
+    await this.request("initialize", {
       protocolVersion: "2025-03-26",
       capabilities: {},
       clientInfo: { name: "forge", version: "0.3.0" },
     }, signal);
-    void initialized;
     this.notify("notifications/initialized", {});
   }
 

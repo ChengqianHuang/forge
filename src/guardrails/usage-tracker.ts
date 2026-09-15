@@ -2,13 +2,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { calculateContextTokens } from "@earendil-works/pi-agent-core";
 
 /**
- * Per-session usage statistics — the pipeline formerly known as CostGuard.
- * The dollar layer (client-side price estimation + budget circuit breaker)
- * was removed 2026-09-11: pricing depends on Pi's model catalog (custom
- * endpoints report $0) and no UI path ever set a budget, so the stopper
- * never fired and the gauge lied. Money control belongs to the provider.
- *
- * What remains is the load-bearing part:
+ * Per-session usage statistics:
  *  - cumulative token counters (fed from assistant-message usage), and
  *  - the context watermark: the most recent assistant message's
  *    calculateContextTokens — the same signal Pi's own shouldCompact uses —

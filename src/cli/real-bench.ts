@@ -174,7 +174,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const picks = process.argv.slice(2).map(Number).filter((n) => Number.isInteger(n));
-  const selected = picks.length > 0 ? TASKS.filter((_, i) => picks.includes(i)) : [...TASKS];
+  const selected = picks.length > 0 ? TASKS.filter((_, i) => picks.includes(i + 1)) : [...TASKS];
+  if (selected.length === 0) {
+    throw new Error(`task numbers must be between 1 and ${TASKS.length}`);
+  }
 
   const forgeHome = mkdtempSync(join(tmpdir(), "forge-real-bench-home-"));
   cpSync(HOME_CONFIG, join(forgeHome, "forge-config.json"));
@@ -182,13 +185,15 @@ async function main(): Promise<void> {
   process.env.FORGE_SESSIONS_DIR = join(forgeHome, "sessions");
 
   const results: TaskResult[] = [];
+  let manager: SessionManager | null = null;
   try {
     const projects = new ProjectsRegistry(forgeHome);
-    const manager = new SessionManager({ forgeHome, projects, approvalHub: new ApprovalHub() });
+    manager = new SessionManager({ forgeHome, projects, approvalHub: new ApprovalHub() });
     for (const task of selected) {
       results.push(await runTask(manager, projects, task));
     }
   } finally {
+    await manager?.shutdown();
     const passed = results.filter((r) => r.passed).length;
     const summary = {
       at: new Date().toISOString(),

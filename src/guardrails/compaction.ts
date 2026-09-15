@@ -129,7 +129,7 @@ export function makePrepareNextTurn(opts: {
     // the hook can fire BEFORE the runner's for-await has processed this
     // turn's message_end (and thus before usage.trackUsage ran). Read
     // the completed turn's own usage from the hook argument instead — it is
-    // always present and timing-safe; costGuard is the fallback.
+    // always present and timing-safe; the persisted usage tracker is the fallback.
     const lastTurnUsage = (ctx.message as { usage?: Usage } | undefined)?.usage;
     const lastTurnContext = lastTurnUsage
       ? calculateContextTokens(lastTurnUsage)

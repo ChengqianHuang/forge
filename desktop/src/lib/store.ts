@@ -1,5 +1,18 @@
 import { create } from "zustand";
-import { getCfg } from "./api.ts";
+import {
+  abortSession,
+  createSession as requestSessionCreation,
+  deleteSession,
+  executeSlashCommand,
+  fetchApprovals,
+  fetchProjects,
+  fetchSessions,
+  getCfg,
+  resolveApproval,
+  resumeSession,
+  selectProject as persistProjectSelection,
+  steerSession,
+} from "./api.ts";
 import { notifyTaskOutcome, outcomeFromTerminal } from "./notify.ts";
 import { thinkingLabel } from "./thinking.ts";
 import type {
@@ -321,7 +334,7 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
         id: `stuck-${stamp}`,
         tone: "warn",
         icon: "⚠",
-        text: `Stuck: ${String(payload.pattern ?? "unknown")} ×${Number(payload.repetitions ?? 0)} — the session was stopped to protect your budget.`,
+        text: `Stuck: ${String(payload.pattern ?? "unknown")} ×${Number(payload.repetitions ?? 0)} — the session was stopped to prevent an infinite loop.`,
       });
       return { conversation };
     }
@@ -588,7 +601,6 @@ async function pollApprovals(): Promise<void> {
   const state = store.getState();
   if (!state.activeSessionId) return;
   try {
-    const { fetchApprovals } = await import("./api.ts");
     const approvals = await fetchApprovals(state.activeSessionId);
     store.setState({ pendingApproval: approvals.length > 0 ? approvals[0]! : null });
   } catch {
@@ -629,7 +641,6 @@ export const store = create<DesktopState>((set, get) => ({
   activeProjectId: null,
 
   refreshSessions: async () => {
-    const { fetchSessions } = await import("./api.ts");
     try {
       const sessions = await fetchSessions();
       set({ sessions, loading: false });
@@ -639,7 +650,6 @@ export const store = create<DesktopState>((set, get) => ({
   },
 
   refreshProjects: async () => {
-    const { fetchProjects } = await import("./api.ts");
     try {
       const r = await fetchProjects();
       set({ projects: r.projects, activeProjectId: r.activeProjectId });
@@ -653,9 +663,8 @@ export const store = create<DesktopState>((set, get) => ({
     // a failed POST reverts via refreshProjects() below. Never swallow the
     // error silently — that was the original bug.
     set({ activeProjectId: id, error: null });
-    const { selectProject: apiSelect } = await import("./api.ts");
     try {
-      await apiSelect(id);
+      await persistProjectSelection(id);
       await get().refreshProjects();
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
@@ -714,10 +723,9 @@ export const store = create<DesktopState>((set, get) => ({
   },
 
   createSession: async (input) => {
-    const { createSession: create } = await import("./api.ts");
     set({ loading: true, error: null });
     try {
-      const { sessionId } = await create(input);
+      const { sessionId } = await requestSessionCreation(input);
       await get().refreshSessions();
       get().select(sessionId);
     } catch (err) {
@@ -730,7 +738,6 @@ export const store = create<DesktopState>((set, get) => ({
   steer: async (message) => {
     const id = get().activeSessionId;
     if (!id || !message.trim()) return;
-    const { steerSession } = await import("./api.ts");
     set({ error: null });
     try {
       await steerSession(id, message.trim());
@@ -743,7 +750,6 @@ export const store = create<DesktopState>((set, get) => ({
   command: async (commandLine) => {
     const id = get().activeSessionId;
     if (!id || !commandLine.trim()) return;
-    const { executeSlashCommand } = await import("./api.ts");
     set({ error: null });
     try {
       await executeSlashCommand(id, commandLine.trim());
@@ -756,14 +762,12 @@ export const store = create<DesktopState>((set, get) => ({
   abort: async () => {
     const id = get().activeSessionId;
     if (!id) return;
-    const { abortSession } = await import("./api.ts");
     await abortSession(id);
   },
 
   resume: async (message) => {
     const id = get().activeSessionId;
     if (!id) return;
-    const { resumeSession } = await import("./api.ts");
     set({ error: null });
     try {
       await resumeSession(id, message);
@@ -777,7 +781,6 @@ export const store = create<DesktopState>((set, get) => ({
   },
 
   remove: async (id) => {
-    const { deleteSession } = await import("./api.ts");
     await deleteSession(id);
     if (get().activeSessionId === id) get().select(null);
     await get().refreshSessions();
@@ -786,7 +789,6 @@ export const store = create<DesktopState>((set, get) => ({
   approve: async (requestId) => {
     const id = get().activeSessionId;
     if (!id) return;
-    const { resolveApproval } = await import("./api.ts");
     await resolveApproval(id, requestId, "approve");
     set({ pendingApproval: null });
     void pollApprovals();
@@ -795,7 +797,6 @@ export const store = create<DesktopState>((set, get) => ({
   deny: async (requestId) => {
     const id = get().activeSessionId;
     if (!id) return;
-    const { resolveApproval } = await import("./api.ts");
     await resolveApproval(id, requestId, "deny");
     set({ pendingApproval: null });
     void pollApprovals();
@@ -811,6 +812,3 @@ export const store = create<DesktopState>((set, get) => ({
 
   resetConversation: () => set({ conversation: emptyConversation() }),
 }));
-
-// Alias matching the previous hook name for minimal import churn.
-export const useDesktopStore = store;

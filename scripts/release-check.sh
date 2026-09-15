@@ -9,14 +9,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
+LOG="$(mktemp -t forge-release-check.XXXXXX)"
+trap 'rm -f "$LOG"' EXIT
 
 check() {
   local name="$1"; local cmd="$2"
   TOTAL=$((TOTAL+1))
-  if eval "$cmd" > /tmp/forge-release-check.log 2>&1; then
+  if eval "$cmd" > "$LOG" 2>&1; then
     echo -e "  ${GREEN}✓${NC} $name"; PASS=$((PASS+1))
   else
-    echo -e "  ${RED}✗${NC} $name"; cat /tmp/forge-release-check.log | tail -10; FAIL=$((FAIL+1))
+    echo -e "  ${RED}✗${NC} $name"; tail -10 "$LOG"; FAIL=$((FAIL+1))
   fi
 }
 
@@ -26,6 +28,8 @@ echo ""
 echo "--- Typecheck ---"
 check "main typecheck"        "cd $ROOT && npx tsc --noEmit"
 check "desktop typecheck"     "cd $ROOT/desktop && npx tsc --noEmit"
+check "desktop rust check"    "cd $ROOT/desktop/src-tauri && cargo check"
+check "desktop rust format"   "cd $ROOT/desktop/src-tauri && cargo fmt --check"
 
 echo ""
 echo "--- Repo Integrity ---"
@@ -71,6 +75,7 @@ check "skeleton smoke"        "cd $ROOT && npx tsx src/cli/smoke.ts"
 check "guardrails smoke"      "cd $ROOT && npx tsx src/cli/smoke-guardrails.ts"
 check "server smoke"          "cd $ROOT && npx tsx src/cli/smoke-server.ts"
 check "recovery smoke"        "cd $ROOT && npx tsx src/cli/smoke-recovery.ts"
+check "watchdog smoke"        "cd $ROOT && npx tsx src/cli/smoke-watchdog.ts"
 check "compaction smoke"      "cd $ROOT && npx tsx src/cli/smoke-compaction.ts"
 check "benchmark goldens"     "cd $ROOT && npx tsx src/cli/benchmark.ts"
 

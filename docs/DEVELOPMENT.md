@@ -28,15 +28,28 @@ Run the release gate from the repository root:
 bash scripts/release-check.sh
 ```
 
-It covers server and desktop type checking, vendored Pi integrity, persistence,
-event ordering, guardrails, recovery, compaction, the internal registry, HTTP
-smokes, harness reliability invariants and benchmark goldens.
+It covers server and desktop type checking, Rust sidecar compilation and
+formatting, vendored Pi integrity, persistence, event ordering, guardrails,
+recovery, compaction, the internal registry, HTTP smokes, harness reliability
+invariants and benchmark goldens.
 
 For a read-only report over persisted sessions:
 
 ```bash
 npm run reliability
 ```
+
+Real-provider acceptance is manual because it consumes a configured
+subscription and evaluates model-dependent outcomes:
+
+```bash
+npm run real-bench                  # all fixture tasks
+npm run real-bench -- 1 3           # one-based task numbers
+npx tsx src/cli/real-compact-smoke.ts
+```
+
+Both commands isolate work in disposable directories. The benchmark records
+results under `~/.forge/real-bench/`; the compaction smoke deletes its fixture.
 
 For desktop changes also build the production bundle:
 

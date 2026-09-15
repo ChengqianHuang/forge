@@ -3,13 +3,9 @@
  *
  * Strategy: prepare a session with a known event-log (3 MESSAGE_ENDED + a few
  * audit events), then call `sessionManager.resume(id)` and verify that the
- * resumed session picks up the correct messages. We do not start a real
- * agent loop — the resume is a no-op on the agent side because we override
- * the streamFn to immediately emit a done event. This isolates the recovery
- * machinery from real LLM traffic.
+ * resumed session picks up the correct messages. A test-seam runner settles
+ * immediately, isolating recovery machinery from real LLM traffic.
  */
-import { EventStream, type AssistantMessage, type AssistantMessageEvent, type Model } from "@earendil-works/pi-ai";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,48 +17,15 @@ import { loadSession, saveSession } from "../core/persistence/session-store.ts";
 import { saveForgeConfig } from "../server/config-store.ts";
 import { replaySession } from "../core/persistence/replay.ts";
 import type { Session } from "../types.ts";
+import type { runAgent } from "../agent-runner.ts";
 
-class ImmediateDoneStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
-  constructor(message: AssistantMessage) {
-    super(
-      (e) => e.type === "done" || e.type === "error",
-      (e) => {
-        if (e.type === "done") return e.message;
-        if (e.type === "error") return e.error;
-        throw new Error("Unexpected event type");
-      },
-    );
-    queueMicrotask(() => {
-      this.push({ type: "done", reason: "stop", message });
-    });
+async function waitForSettlement(sessionId: string): Promise<Session | null> {
+  let session = await loadSession(sessionId);
+  for (let attempt = 0; attempt < 40 && session?.status === "running"; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    session = await loadSession(sessionId);
   }
-}
-
-const fakeModel = {
-  id: "smoke-recovery",
-  provider: "smoke-recovery",
-  api: "openai-responses",
-  name: "Smoke Recovery",
-  input: ["text"],
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 8192,
-  maxTokens: 2048,
-} as unknown as Model<any>;
-
-function immediateDoneStreamFn(): StreamFn {
-  return () => {
-    const msg: AssistantMessage = {
-      role: "assistant",
-      content: [{ type: "text", text: "smoke ok" }],
-      api: "openai-responses",
-      provider: "smoke-recovery",
-      model: "smoke-recovery",
-      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { total: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
-      stopReason: "stop",
-      timestamp: Date.now(),
-    };
-    return new ImmediateDoneStream(msg) as unknown as ReturnType<StreamFn>;
-  };
+  return session;
 }
 
 async function main(): Promise<void> {
@@ -139,36 +102,23 @@ async function main(): Promise<void> {
 
     // 4. Wire SessionManager and call resume() — without a real LLM, this
     //    verifies the SessionManager plumbing: status check, replay,
-    //    usage.hydrate, launchAgent path. We override streamFn to
-    //    immediately emit done.
+    //    usage hydration and launchAgent path.
     const approvalHub = new ApprovalHub();
     const projects = new ProjectsRegistry(forgeHome);
-    const manager = new SessionManager({ forgeHome, projects, approvalHub });
-
-    // Patch runAgent by calling resume() and racing with abort — we want
-    // to observe that resume reaches the message-recovery stage, not that
-    // the agent loop completes (since there's no real LLM).
-    const resumeP = manager.resume(sessionId).catch((err) => {
-      // The fake base URL will fail to connect during runAgent. That's
-      // expected — we don't care about LLM success here, only about the
-      // recovery plumbing up to launchAgent.
-      return err;
+    const agentRunner: typeof runAgent = async ({ session: running }) => ({
+      ...running,
+      status: "completed",
+      failureReason: null,
     });
-    // Give the agent a moment to start.
-    await new Promise((r) => setTimeout(r, 200));
+    const manager = new SessionManager({ forgeHome, projects, approvalHub, agentRunner });
+    await manager.resume(sessionId);
 
     // 5. Verify session state on disk: status should have transitioned to
-    //    "running" (resume()) and then to "completed" (the mock LLM emits a
-    //    single done event and the loop ends). What we care about is that
-    //    the replayed messages survived — the resumed loop should produce a
-    //    transcript with at least the 3 replayed messages plus whatever the
-    //    mock loop added (1 prompt + 1 assistant = 5 total).
-    const after = await loadSession(sessionId);
+    //    "running" (resume()) and then to "completed" (the injected runner
+    //    settles). What matters is that the replayed messages survived.
+    const after = await waitForSettlement(sessionId);
     const messagesOk = after !== null && after.messages.length >= 3;
     const usageOk = after !== null && typeof after.usage.tokensIn === "number";
-    // Note: tokensIn from hydrate (123) gets added to by trackUsage during
-    // the mock loop's assistant message. The persisted usage reflects
-    // both — we only assert it is a finite number, not the exact value.
     ok = ok && messagesOk && usageOk;
     console.log(
       `  session after resume: status=${after?.status} messages=${after?.messages.length} tokensIn=${after?.usage.tokensIn} → ${
@@ -181,31 +131,17 @@ async function main(): Promise<void> {
     //    loop with the message as the prompt. Verify it flips the session
     //    back to running (then it settles again).
     //
-    //    Only a settled session is resumable, and how long the first run
-    //    needs to settle is machine-dependent — poll for it instead of racing
-    //    a fixed sleep. (A hard-coded 200ms wait here made this test fail on
-    //    any machine where the run settles slower than that.)
-    let settled = after;
-    for (let i = 0; i < 40 && settled?.status === "running"; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      settled = await loadSession(sessionId);
-    }
-
     let followed = false;
     try {
       await manager.resume(sessionId);
-      // give the relaunch a beat to reach the loop
-      await new Promise((r) => setTimeout(r, 300));
-      const after = await loadSession(sessionId);
-      followed = after?.status === "running" || after?.status === "completed";
+      followed = (await waitForSettlement(sessionId))?.status === "completed";
     } catch (err) {
       console.log("  follow-up resume threw:", String(err));
     }
     ok = ok && followed;
     console.log(`  follow-up resume on completed session: ${followed ? "OK" : "FAIL"}`);
 
-    // Wait for the in-flight agent to finish before exit.
-    await resumeP;
+    await manager.shutdown();
   } finally {
     rmSync(forgeHome, { recursive: true, force: true });
   }

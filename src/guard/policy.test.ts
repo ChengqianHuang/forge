@@ -172,7 +172,7 @@ describe("loadPolicy", () => {
 
 describe("summarizeInput", () => {
   test("truncates long input", () => {
-    const s = summarizeInput("bash", { command: "x".repeat(500) });
+    const s = summarizeInput({ command: "x".repeat(500) });
     assert.ok(s.length <= 303);
   });
 });

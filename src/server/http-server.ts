@@ -4,7 +4,7 @@ import { eventsDir } from "../core/persistence/event-log.ts";
 import { ApprovalHub } from "./approval-hub.ts";
 import { ProjectsRegistry } from "./projects.ts";
 import { SessionManager } from "./session-manager.ts";
-import { isAuthorized, newToken, writeHandshake } from "./auth.ts";
+import { isAuthorized, newToken, removeHandshake, writeHandshake } from "./auth.ts";
 import { loadForgeConfig, saveForgeConfig, PROVIDER_APIS } from "./config-store.ts";
 import type { ProviderApi } from "./config-store.ts";
 import { discoverModels } from "./model-discovery.ts";
@@ -398,6 +398,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
       await manager.shutdown();
       server.closeAllConnections();
       await new Promise<void>((resolveP) => server.close(() => resolveP()));
+      await removeHandshake(opts.forgeHome);
     },
   };
 }

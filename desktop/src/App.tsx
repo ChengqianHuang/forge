@@ -19,7 +19,6 @@ export function App() {
   const theme = store((s) => s.theme);
   const settingsOpen = store((s) => s.settingsOpen);
   const pendingApproval = store((s) => s.pendingApproval);
-  const refreshSessions = store((s) => s.refreshSessions);
   const setSettingsOpen = store((s) => s.setSettingsOpen);
   const activeProjectId = store((s) => s.activeProjectId);
 
@@ -35,9 +34,7 @@ export function App() {
         token: localStorage.getItem("forge-token") ?? "",
       },
     );
-    // One fetch, then open the most recent session by default — zero-config
-    // startup. (This used to call refreshSessions() twice: once bare, once
-    // chained, racing two identical requests.)
+    // One fetch, then open the most recent session by default.
     void store
       .getState()
       .refreshSessions()

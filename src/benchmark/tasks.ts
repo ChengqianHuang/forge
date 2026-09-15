@@ -62,7 +62,7 @@ export const goldenStuckLoop: GoldenTask = {
   category: "recovery",
   goal: "Agent repeats an identical write forever (stuck)",
   script: () => stuckScript(10),
-  assert: ({ metrics, runtime, session }) => {
+  assert: ({ metrics, runtime }) => {
     const a: Assertion[] = [];
     a.push({
       name: "STUCK_WARNING emitted",

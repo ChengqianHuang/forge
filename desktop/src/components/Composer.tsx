@@ -12,9 +12,6 @@ export function Composer({ projectId }: { projectId?: string | null }) {
   const [goal, setGoal] = useState("");
   const [thinking, setThinking] = useState<ThinkingLevel>("medium");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("default");
-  // Turn budget: after the cost budget was retired this is the only "runaway"
-  // bound, and it used to have no UI entry at all (AGENTS.md Rule 9.2: a
-  // capability without a UI entry point does not exist for the user).
   const { providers, defaultProviderId, capabilities } = useModelCatalog();
   const [providerId, setProviderId] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
 
@@ -30,23 +30,13 @@ export async function removeHandshake(forgeHome: string): Promise<void> {
   await rm(handshakePath(forgeHome), { force: true });
 }
 
-export async function readHandshake(forgeHome: string): Promise<Handshake | null> {
-  try {
-    const raw = await readFile(handshakePath(forgeHome), "utf8");
-    return JSON.parse(raw) as Handshake;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-}
-
 function bearerToken(req: IncomingMessage): string | undefined {
   const h = req.headers.authorization;
   if (h && h.startsWith("Bearer ")) return h.slice(7);
   return undefined;
 }
 
-export function requestToken(req: IncomingMessage, url: URL): string | undefined {
+function requestToken(req: IncomingMessage, url: URL): string | undefined {
   return bearerToken(req) ?? url.searchParams.get("token") ?? undefined;
 }
 

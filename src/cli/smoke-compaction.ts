@@ -14,6 +14,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendEvent, readEvents } from "../core/persistence/event-log.ts";
+import { makePrepareNextTurn } from "../guardrails/compaction.ts";
+import { UsageTracker } from "../guardrails/usage-tracker.ts";
 import type { UserMessage } from "@earendil-works/pi-ai";
 
 async function main(): Promise<void> {
@@ -23,9 +25,6 @@ async function main(): Promise<void> {
   let ok = true;
 
   try {
-    const { makePrepareNextTurn } = await import("../guardrails/compaction.ts");
-    const { UsageTracker } = await import("../guardrails/usage-tracker.ts");
-
     const sessionId = `s_compaction_${Date.now()}`;
     const usage = new UsageTracker();
     // Simulate having received a usage report with input > threshold.

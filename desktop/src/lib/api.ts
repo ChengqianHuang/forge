@@ -71,10 +71,6 @@ export async function fetchSessions(): Promise<Session[]> {
   return (await getJson<{ sessions: Session[] }>("/sessions")).sessions;
 }
 
-export async function fetchSession(id: string): Promise<Session> {
-  return getJson(`/sessions/${id}`);
-}
-
 export async function steerSession(id: string, message: string): Promise<void> {
   await send(`/sessions/${id}/steer`, "POST", { message });
 }

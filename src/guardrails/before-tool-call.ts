@@ -79,7 +79,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
         approvalMode: config.approvalMode ?? "default",
         ruleId: null,
         reason: "aborted before policy evaluation",
-        inputSummary: summarizeInput(toolName, input),
+        inputSummary: summarizeInput(input),
       }).catch(() => {});
       return { block: true, reason: "aborted by user", terminate: true };
     }
@@ -101,7 +101,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
       approvalMode,
       ruleId: decision.ruleId ?? null,
       reason: decision.reason,
-      inputSummary: summarizeInput(toolName, input),
+      inputSummary: summarizeInput(input),
     };
 
     if (decision.action === "deny") {
@@ -123,7 +123,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
       };
     }
 
-    // 1.5 Approval posture (session-level, live — see CompletionConfig).
+    // 1.5 Approval posture (session-level and live).
     // "always" releases every ask; "default" whitelists safe read-only bash.
     // Deny decisions are NEVER relaxed: the destructive floor holds in every
     // mode, and explicit user allow-rules in guard.json still win (mode only

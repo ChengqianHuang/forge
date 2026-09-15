@@ -54,7 +54,7 @@ describe("makePrepareNextTurn (truncate-mode compaction)", () => {
         return Promise.resolve();
       },
     });
-    // Zero-token usage falls back to costGuard (null) — nothing seen yet.
+    // Zero-token usage falls back to the tracker (null) — nothing seen yet.
     const ctx = makeCtx([userMsg("a"), userMsg("b")], 0);
     const out = await prepare(ctx);
     assert.equal(out, undefined);

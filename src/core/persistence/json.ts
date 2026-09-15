@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
@@ -14,6 +14,5 @@ export async function writeJsonFileAtomic(path: string, value: unknown): Promise
   // rename would consume the second's tmp file (ENOENT, task file lost).
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(value, null, 2) + "\n", "utf8");
-  const { rename } = await import("node:fs/promises");
   await rename(tmp, path);
 }

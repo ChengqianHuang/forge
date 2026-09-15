@@ -24,9 +24,10 @@ async function main(): Promise<void> {
   process.env.FORGE_COMPACTION_THRESHOLD = "1";
   process.env.FORGE_COMPACTION_KEEP_RECENT_TOKENS = "500";
 
+  let manager: SessionManager | null = null;
   try {
     const projects = new ProjectsRegistry(forgeHome);
-    const manager = new SessionManager({ forgeHome, projects, approvalHub: new ApprovalHub() });
+    manager = new SessionManager({ forgeHome, projects, approvalHub: new ApprovalHub() });
     const project = await projects.register({ path: workspace, name: "compact-real" });
     await projects.select(project.id);
 
@@ -38,24 +39,22 @@ async function main(): Promise<void> {
       projectId: project.id,
     });
 
-    // Wait for settle.
-    for (let i = 0; i < 180; i++) {
-      const active = (manager as unknown as { active: Map<string, unknown> }).active;
-      if (!active.has(sessionId)) break;
+    // Wait through the public persisted-session surface. Reaching into the
+    // manager's runtime map made this diagnostic break when runtime ownership
+    // was correctly consolidated inside SessionManager.
+    for (let i = 0; i < 180 && (await manager.get(sessionId))?.status === "running"; i++) {
       await new Promise((r) => setTimeout(r, 1000));
     }
 
     const session = await loadSession(sessionId);
     const events = await readEvents(sessionId);
     const compaction = events.filter((e) => e.type === "COMPACTION");
-    const costUpdates = events.filter((e) => e.type === "COST_UPDATE").map((e) => e.payload);
-    const notes = join(workspace, "big.txt");
+    const output = join(workspace, "big.txt");
 
     console.log(`  state: ${session?.status} (reason: ${session?.failureReason})`);
     console.log(`  usage: ${JSON.stringify(session?.usage)}`);
-    console.log(`  COST_UPDATE payloads: ${JSON.stringify(costUpdates)}`);
     console.log(`  COMPACTION events: ${JSON.stringify(compaction.map((e) => e.payload))}`);
-    console.log(`  notes.txt exists: ${existsSync(notes)} content: ${existsSync(notes) ? JSON.stringify(readFileSync(notes, "utf8").slice(0, 60)) : "-"}`);
+    console.log(`  big.txt exists: ${existsSync(output)} content: ${existsSync(output) ? JSON.stringify(readFileSync(output, "utf8").slice(0, 60)) : "-"}`);
 
     const ok =
       compaction.some((e) => (e.payload as { mode?: string }).mode === "llm-summary") &&
@@ -63,6 +62,7 @@ async function main(): Promise<void> {
     console.log(`\nREAL LLM-SUMMARY COMPACTION: ${ok ? "PASS" : "FAIL"}`);
     if (!ok) process.exitCode = 1;
   } finally {
+    await manager?.shutdown();
     rmSync(forgeHome, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });
   }

@@ -6,6 +6,7 @@ import type {
   PluginHooks,
   PluginInstance,
   PluginManifest,
+  PluginReadContext,
   PluginRuntimeDescriptor,
   PluginRuntimeStatus,
   PluginSessionContext,
@@ -78,7 +79,7 @@ export class PluginRegistry {
     pluginId: string,
     actionId: string,
     input: Record<string, unknown>,
-    context: import("./types.ts").PluginReadContext,
+    context: PluginReadContext,
   ): Promise<unknown> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);

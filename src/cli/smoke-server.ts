@@ -4,13 +4,12 @@
  * SSE stream, abort, delete) with a fake subscription — no network calls are
  * awaited (the background agent fails against the fake key and is aborted).
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startForgeServer, type ForgeServerHandle } from "../server/http-server.ts";
 import { saveForgeConfig } from "../server/config-store.ts";
-import { saveSession } from "../core/persistence/session-store.ts";
 
 async function main(): Promise<void> {
   const forgeHome = mkdtempSync(join(tmpdir(), "forge-server-smoke-"));
@@ -252,11 +251,9 @@ async function main(): Promise<void> {
     console.log(`  approvals: ${(approvals.approvals as unknown[]).length}, reliability capability: ${reliability.integrity?.healthy}, diff: ${diffResponse.status}, delete: ${deleted.status}`);
     ok = ok && deleted.status === 200;
 
-    // Cleanup: the session file must be gone.
-    rmSync(join(forgeHome, "sessions", `${sessionId}.json`), { force: true });
-    void saveSession; // referenced only to keep the import honest
   } finally {
     await handle.close();
+    ok = ok && !existsSync(join(forgeHome, "server.json"));
     rmSync(forgeHome, { recursive: true, force: true });
   }
 

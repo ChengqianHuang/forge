@@ -30,6 +30,15 @@ describe("ApprovalHub", () => {
     assert.equal(hub.get("ghost"), null);
   });
 
+  test("markForSession cannot resolve another session's request", () => {
+    const hub = new ApprovalHub();
+    hub.record({ requestId: "r1", sessionId: "t1", method: "confirm", title: "A", message: "m", at: 1 });
+    assert.equal(hub.markForSession("t2", "r1", "approved"), false);
+    assert.equal(hub.get("r1")?.status, "pending");
+    assert.equal(hub.markForSession("t1", "r1", "approved"), true);
+    assert.equal(hub.get("r1")?.status, "approved");
+  });
+
   test("cancelSession expires pending requests and releases their waiters", async () => {
     const hub = new ApprovalHub();
     const waiting = hub.request({

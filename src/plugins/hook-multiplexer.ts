@@ -1,5 +1,4 @@
 import type {
-  AgentLoopConfig,
   AgentLoopTurnUpdate,
   BeforeToolCallContext,
   BeforeToolCallResult,
