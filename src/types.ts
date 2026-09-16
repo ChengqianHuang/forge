@@ -5,8 +5,8 @@ export type SessionStatus = "running" | "completed" | "failed" | "cancelled";
 /**
  * Approval posture for mutating tool calls (bash / git / network).
  * - "ask": every one asks (the pre-v0.3e behavior).
- * - "default": safe read-only commands are whitelisted through (ls, cat,
- *   git status, ...); everything else asks.
+ * - "default": a strict safe-command whitelist is released (read-only shell
+ *   inspection plus named test/build runners); everything else asks.
  * - "always": nothing asks. The destructive floor (sudo, rm -rf /, ...) is
  *   NOT relaxed — deny rules still terminate the session.
  */

@@ -567,7 +567,7 @@ export function reduceEnvelope(state: DesktopState, env: EventEnvelope): Partial
         policyAction: (payload.policyAction === "allow" || payload.policyAction === "deny" ? payload.policyAction : "ask"),
         effectiveAction: (payload.effectiveAction === "allow" || payload.effectiveAction === "deny" ? payload.effectiveAction : "ask"),
         outcome: outcome as GuardDecisionView["outcome"],
-        basis: (["policy", "approval-mode", "safe-readonly", "user", "plugin"].includes(String(payload.basis))
+        basis: (["policy", "approval-mode", "safe-command", "safe-readonly", "user", "plugin"].includes(String(payload.basis))
           ? payload.basis
           : "policy") as GuardDecisionView["basis"],
         approvalMode: (payload.approvalMode === "ask" || payload.approvalMode === "always" ? payload.approvalMode : "default"),

@@ -143,7 +143,7 @@ describe("beforeToolCall → approval mode", () => {
     assert.ok(result && result.block === true, "sudo is still denied");
   });
 
-  test('"default" whitelists safe read-only bash, still asks the rest', async () => {
+  test('"default" whitelists safe commands, still asks the rest', async () => {
     const { asks, relay } = recordingRelay();
     const base = config(join(TMP, "mode-default"));
     const cfg: GuardrailConfig = { ...base, approval: relay };
@@ -152,7 +152,10 @@ describe("beforeToolCall → approval mode", () => {
     assert.equal(await hook({ toolCall: { name: "bash", id: "d1" }, args: { command: "ls -la /tmp/x" } } as never), undefined);
     assert.equal(asks.length, 0, "ls is whitelisted");
 
-    assert.equal(await hook({ toolCall: { name: "bash", id: "d2" }, args: { command: "curl https://x" } } as never), undefined);
+    assert.equal(await hook({ toolCall: { name: "bash", id: "d2" }, args: { command: "npm test" } } as never), undefined);
+    assert.equal(asks.length, 0, "npm test is whitelisted");
+
+    assert.equal(await hook({ toolCall: { name: "bash", id: "d3" }, args: { command: "curl https://x" } } as never), undefined);
     assert.equal(asks.length, 1, "curl still asks");
   });
 
@@ -254,11 +257,12 @@ describe("beforeToolCall → durable decision evidence", () => {
         outcome: event.payload.outcome,
         capability: event.payload.capability,
         ruleId: event.payload.ruleId,
+        basis: event.payload.basis,
       })),
       [
-        { id: "evidence-allow", outcome: "allowed", capability: "git", ruleId: "git-read-status" },
-        { id: "evidence-deny", outcome: "denied", capability: "destructive", ruleId: "destructive-deny" },
-        { id: "evidence-reject", outcome: "rejected", capability: "network", ruleId: "network-ask" },
+        { id: "evidence-allow", outcome: "allowed", capability: "git", ruleId: "git-ask", basis: "safe-command" },
+        { id: "evidence-deny", outcome: "denied", capability: "destructive", ruleId: "destructive-deny", basis: "policy" },
+        { id: "evidence-reject", outcome: "rejected", capability: "network", ruleId: "network-ask", basis: "user" },
       ],
     );
   });

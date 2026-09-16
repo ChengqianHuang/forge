@@ -20,8 +20,14 @@ let previousSessionsDir: string | undefined;
 let previousEventsDir: string | undefined;
 let previousCancelGrace: string | undefined;
 let previousShutdownGrace: string | undefined;
+// Tests leave deliberately unresolved runner promises (a Stop test must
+// prove a pending await dies with the loop). If the event loop briefly
+// drains between tests, node exits mid-file and cancels the rest — hold it
+// open for the whole file instead.
+let keepAlive: ReturnType<typeof setInterval> | undefined;
 
 before(async () => {
+  keepAlive = setInterval(() => {}, 1000);
   forgeHome = await mkdtemp(join(tmpdir(), "forge-lifecycle-test-"));
   previousSessionsDir = process.env.FORGE_SESSIONS_DIR;
   previousEventsDir = process.env.FORGE_EVENTS_DIR;
@@ -46,6 +52,7 @@ before(async () => {
 });
 
 after(async () => {
+  if (keepAlive) clearInterval(keepAlive);
   if (previousSessionsDir === undefined) delete process.env.FORGE_SESSIONS_DIR;
   else process.env.FORGE_SESSIONS_DIR = previousSessionsDir;
   if (previousEventsDir === undefined) delete process.env.FORGE_EVENTS_DIR;

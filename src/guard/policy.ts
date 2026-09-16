@@ -98,11 +98,6 @@ export const DEFAULT_POLICY: GuardPolicy = {
   rules: [
     { id: "read-allow", capability: "read", decision: "allow" },
     { id: "destructive-deny", capability: "destructive", decision: "deny", terminate: true },
-    { id: "git-read-status", capability: "git", contains: "status", decision: "allow" },
-    { id: "git-read-diff", capability: "git", contains: "diff", decision: "allow" },
-    { id: "git-read-log", capability: "git", contains: "log", decision: "allow" },
-    { id: "git-read-show", capability: "git", contains: "show", decision: "allow" },
-    { id: "git-read-branch", capability: "git", contains: "branch", decision: "allow" },
     // File writes are covered by the undo journal (restorable), so they do not
     // need interactive approval by default — this is the main noise reduction.
     { id: "write-allow", capability: "write", decision: "allow" },
@@ -114,26 +109,79 @@ export const DEFAULT_POLICY: GuardPolicy = {
 };
 
 /**
- * Read-only bash commands whitelisted through in the "default" approval mode
+ * Safe bash commands whitelisted through in the "default" approval mode
  * (PM, 2026-09-12: "默认（按白名单放行）").
  *
  * Conservative by construction: EVERY shell segment (split on &&, ||, ;, |,
- * newline) must start with a read-only binary; redirection, command
- * substitution and expansion disqualify the whole command; `find` may not
- * carry -delete/-exec; `git` only in read-only subcommands. Anything
- * uncertain asks — the whitelist must never be the reason something
- * destructive ran.
+ * newline) must be an explicitly supported command; redirection, command
+ * substitution and expansion disqualify the whole command. Anything uncertain
+ * asks — the whitelist must never be the reason something destructive ran.
  */
 const SAFE_BASH_BINARIES: ReadonlySet<string> = new Set([
-  "ls", "cat", "head", "tail", "pwd", "echo", "which", "where", "type",
-  "find", "grep", "rg", "wc", "sort", "uniq", "diff", "stat", "file",
-  "du", "df", "date", "whoami", "id", "env", "printenv", "cd",
-  "true", "false",
+  "cat", "ls", "head", "tail", "wc", "stat", "file", "grep", "diff",
+  "du", "test",
 ]);
 
-const SAFE_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
-  "status", "diff", "log", "show", "branch", "remote", "rev-parse", "stash list",
+const SAFE_PROJECT_RUNNERS: ReadonlySet<string> = new Set(["npm", "pnpm", "yarn", "bun"]);
+const SAFE_PROJECT_SCRIPTS: ReadonlySet<string> = new Set(["test", "lint", "typecheck", "build"]);
+const SAFE_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set(["status", "diff", "log", "show", "rev-parse"]);
+const MUTATING_BRANCH_OPTIONS: ReadonlySet<string> = new Set([
+  "-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy",
+  "--edit-description", "--set-upstream-to", "--unset-upstream",
 ]);
+const BRANCH_ARGUMENT_OPTIONS: ReadonlySet<string> = new Set([
+  "--list", "-a", "--all", "-r", "--remotes", "--contains", "--no-contains",
+  "--merged", "--no-merged", "--points-at",
+]);
+
+function hasOption(tokens: readonly string[], option: string): boolean {
+  return tokens.some((token) => token === option || token.startsWith(`${option}=`));
+}
+
+function isSafeGit(tokens: readonly string[]): boolean {
+  const subcommand = tokens[1] ?? "";
+  if (SAFE_GIT_SUBCOMMANDS.has(subcommand)) {
+    // These otherwise-read-only commands can write output files or execute an
+    // external diff driver. Keep those variants behind approval.
+    return !hasOption(tokens, "--output") && !tokens.includes("--ext-diff") && !tokens.includes("--textconv");
+  }
+  if (subcommand === "stash") return tokens.length === 3 && tokens[2] === "list";
+  if (subcommand === "branch") {
+    if (tokens.length === 2) return true;
+    const mutates = tokens.slice(2).some((token) =>
+      MUTATING_BRANCH_OPTIONS.has(token) ||
+      ["-d", "-D", "-m", "-M", "-c", "-C"].some((flag) => token.startsWith(flag)) ||
+      [...MUTATING_BRANCH_OPTIONS].some((flag) => flag.startsWith("--") && token.startsWith(`${flag}=`)),
+    );
+    if (mutates) return false;
+    // A positional branch name creates a branch unless a listing/filter flag
+    // makes it a pattern or revision argument.
+    const permitsArguments = tokens.some((token) => BRANCH_ARGUMENT_OPTIONS.has(token));
+    return tokens.slice(2).every((token) => token.startsWith("-")) || permitsArguments;
+  }
+  if (subcommand === "remote") {
+    if (tokens.length === 2) return true;
+    if (tokens.length === 3 && ["-v", "--verbose"].includes(tokens[2] ?? "")) return true;
+    if (tokens[2] === "get-url") return tokens.length >= 4;
+    // `git remote show origin` contacts the remote unless query mode is
+    // explicitly disabled, so it is not a local read-only command by default.
+    return tokens[2] === "show" && tokens.some((token) => token === "-n" || token === "--no-query");
+  }
+  return false;
+}
+
+function isSafeSegment(tokens: readonly string[]): boolean {
+  const bin = tokens[0] ?? "";
+  if (bin === "git") return isSafeGit(tokens);
+  if (SAFE_BASH_BINARIES.has(bin)) {
+    // GNU diff supports an output-file option even without shell redirection.
+    return bin !== "diff" || !hasOption(tokens, "--output");
+  }
+  if (SAFE_PROJECT_RUNNERS.has(bin)) return SAFE_PROJECT_SCRIPTS.has(tokens[1] ?? "");
+  if (bin === "npx") return tokens.length === 3 && tokens[1] === "tsc" && tokens[2] === "--noEmit";
+  if (bin === "node") return tokens[1] === "--test";
+  return false;
+}
 
 export function isSafeBash(command: unknown): boolean {
   if (typeof command !== "string" || command.trim().length === 0) return false;
@@ -143,15 +191,8 @@ export function isSafeBash(command: unknown): boolean {
   for (const raw of segments) {
     const seg = raw.trim();
     if (seg.length === 0) continue;
-    if (/\b(delete|exec)\b/.test(seg) && seg.startsWith("find")) return false;
     const tokens = seg.split(/\s+/);
-    const bin = tokens[0] ?? "";
-    if (bin === "git") {
-      const sub = (tokens[1] ?? "") + (tokens[2] === "list" ? ` ${tokens[2]}` : "");
-      if (!SAFE_GIT_SUBCOMMANDS.has(sub)) return false;
-      continue;
-    }
-    if (!SAFE_BASH_BINARIES.has(bin)) return false;
+    if (!isSafeSegment(tokens)) return false;
   }
   return true;
 }

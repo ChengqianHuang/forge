@@ -95,9 +95,9 @@ describe("evaluateToolCall with defaults", () => {
     assert.equal(evaluateToolCall(p, "bash", { command: "curl -s https://api.example.com" }).action, "ask");
   });
 
-  test("git status/diff/log → allow; git commit → ask", () => {
-    assert.equal(evaluateToolCall(p, "bash", { command: "git status" }).action, "allow");
-    assert.equal(evaluateToolCall(p, "bash", { command: "git diff HEAD" }).action, "allow");
+  test("git commands remain asks at policy level; approval mode decides safe forms", () => {
+    assert.equal(evaluateToolCall(p, "bash", { command: "git status" }).action, "ask");
+    assert.equal(evaluateToolCall(p, "bash", { command: "git diff HEAD" }).action, "ask");
     assert.equal(evaluateToolCall(p, "bash", { command: "git commit -m wip" }).action, "ask");
   });
 
@@ -238,9 +238,20 @@ describe("isSafeBash（default 审批级别的白名单）", () => {
   const cases: Array<[string, unknown, boolean]> = [
     ["plain ls", "ls -la /tmp/x", true],
     ["read-only chain", "cat a.txt && grep pattern b.txt", true],
-    ["piped reads", "cat x | sort | uniq -c", true],
+    ["piped reads", "cat x | grep pattern | wc -l", true],
     ["git status", "git status", true],
     ["git diff", "git diff HEAD", true],
+    ["git branch list", "git branch --list feature/*", true],
+    ["git branch create", "git branch new-feature", false],
+    ["git branch delete", "git branch -D old", false],
+    ["git branch attached delete", "git branch -Dold", false],
+    ["git remote list", "git remote -v", true],
+    ["git remote local show", "git remote show -n origin", true],
+    ["git remote network show", "git remote show origin", false],
+    ["git remote mutate", "git remote add origin https://example.com/x", false],
+    ["git output file", "git diff --output=patch.txt", false],
+    ["git external text conversion", "git show --textconv HEAD:file", false],
+    ["git substring cannot bypass", "git commit -m status", false],
     ["git push", "git push origin main", false],
     ["network", "curl https://example.com", false],
     ["mutation", "rm -rf /tmp/x", false],
@@ -250,7 +261,22 @@ describe("isSafeBash（default 审批级别的白名单）", () => {
     ["backtick", "cat `echo secret`", false],
     ["find -delete", "find . -name y -delete", false],
     ["find -exec", "find . -exec sh {} \\", false],
-    ["npm test", "npm test", false],
+    ["rg is outside the finite list", "rg pattern src", false],
+    ["npm test", "npm test", true],
+    ["pnpm lint", "pnpm lint", true],
+    ["yarn typecheck", "yarn typecheck", true],
+    ["bun build", "bun build", true],
+    ["npm arbitrary script", "npm run deploy", false],
+    ["npm install", "npm install", false],
+    ["npm publish", "npm publish", false],
+    ["npx tsc", "npx tsc --noEmit", true],
+    ["npx tsc may not emit", "npx tsc", false],
+    ["npx tsc trace writes", "npx tsc --noEmit --generateTrace trace", false],
+    ["npx writer", "npx prettier --write .", false],
+    ["node test", "node --test", true],
+    ["node script", "node script.js", false],
+    ["safe test chain", "npm test && git status", true],
+    ["test chain with mutation", "npm test && npm publish", false],
     ["chained poison", "ls && curl https://evil", false],
     ["empty", "", false],
     ["non-string", 42, false],

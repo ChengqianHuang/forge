@@ -115,7 +115,7 @@ export interface GuardDecisionView {
   policyAction: "allow" | "ask" | "deny";
   effectiveAction: "allow" | "ask" | "deny";
   outcome: "allowed" | "approved" | "rejected" | "denied" | "aborted";
-  basis: "policy" | "approval-mode" | "safe-readonly" | "user" | "plugin";
+  basis: "policy" | "approval-mode" | "safe-command" | "safe-readonly" | "user" | "plugin";
   approvalMode: ApprovalMode;
   ruleId: string | null;
   reason: string;

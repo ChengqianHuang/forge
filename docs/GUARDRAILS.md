@@ -41,8 +41,15 @@ for the final decision record.
 Approval modes:
 
 - `ask`: ask for every policy-classified mutation.
-- `default`: allow the conservative read-only shell whitelist; ask for the rest.
+- `default`: allow the conservative safe-command whitelist; ask for the rest.
 - `always`: skip asks, while preserving explicit denies.
+
+The default whitelist is deliberately finite: `cat`, `ls`, `head`, `tail`,
+`wc`, `stat`, `file`, `grep`, `diff`, `du`, shell `test`; read-only Git
+inspection; `npm`/`pnpm`/`yarn`/`bun` `test|lint|typecheck|build`;
+`npx tsc --noEmit`; and `node --test`. Every segment of a compound command
+must independently qualify. Redirection, substitution, mutation-capable Git
+forms and write-capable output flags fall back to approval.
 
 The destructive deny floor applies in every mode. Unknown tools—including MCP
 tools without a specific allow rule—default to asking.

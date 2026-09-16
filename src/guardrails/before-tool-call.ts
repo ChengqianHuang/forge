@@ -124,7 +124,8 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
     }
 
     // 1.5 Approval posture (session-level and live).
-    // "always" releases every ask; "default" whitelists safe read-only bash.
+    // "always" releases every ask; "default" releases the strict safe-command
+    // whitelist (read-only inspection plus the named test/build runners).
     // Deny decisions are NEVER relaxed: the destructive floor holds in every
     // mode, and explicit user allow-rules in guard.json still win (mode only
     // affects the built-in ask decisions).
@@ -140,7 +141,7 @@ export function makeBeforeToolCall(config: GuardrailConfig) {
       isSafeBash(input.command)
     ) {
       action = "allow";
-      basis = "safe-readonly";
+      basis = "safe-command";
     }
 
     // 2. Undo journal backup before file mutation.

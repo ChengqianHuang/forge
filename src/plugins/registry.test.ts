@@ -1,4 +1,13 @@
-import { describe, test } from "node:test";
+import { after, describe, test } from "node:test";
+
+// Some tests leave deliberately unresolved plugin promises (the timeout race
+// rejects them only via its own timer). When the event loop briefly drains
+// between tests, node exits mid-file and the remaining tests are cancelled —
+// keep the loop alive for the whole file and release it in `after`.
+let keepAlive: ReturnType<typeof setInterval> | undefined;
+after(() => {
+  if (keepAlive) clearInterval(keepAlive);
+});
 import assert from "node:assert/strict";
 import { PluginRegistry } from "./registry.ts";
 import type { ForgePlugin, PluginSessionContext } from "./types.ts";
@@ -21,6 +30,7 @@ function context(events: Array<{ type: string; payload: Record<string, unknown> 
 }
 
 describe("PluginRegistry", () => {
+  keepAlive = setInterval(() => {}, 1000);
   test("projects declared UI contributions without teaching the registry renderer semantics", () => {
     const registry = new PluginRegistry();
     registry.register({
