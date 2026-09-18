@@ -200,6 +200,22 @@ const timeline: TimelineEntry[] = [
   },
 ];
 
+/** scene=fold — a settled multi-turn history rendered through turn-process
+ *  folding: tools and info notices collapse into summary bars, prose stays. */
+const FOLD_TIMELINE: TimelineEntry[] = [
+  { kind: "user", id: "fu1", text: "把 CLI 加上 --json 输出，并补测试" },
+  { kind: "tool", id: "ft1", toolCallId: "ft1", toolName: "read", args: { path: "src/cli/print.ts" }, running: false },
+  { kind: "tool", id: "ft2", toolCallId: "ft2", toolName: "edit", args: { path: "src/cli/print.ts" }, running: false },
+  { kind: "notice", id: "fn1", tone: "info", icon: "✦", text: "Model switched to MiniMax-M3 — applies from the next turn." },
+  { kind: "assistant", id: "fa1", text: "已在 print.ts 中加入 --json 分支：json 为真时输出序列化结果，否则维持表格渲染。", streaming: false, thinking: false },
+  { kind: "user", id: "fu2", text: "跑一下测试和 typecheck" },
+  { kind: "tool", id: "ft3", toolCallId: "ft3", toolName: "bash", args: { command: "npm test -- --grep json" }, result: "3 passed", running: false },
+  { kind: "tool", id: "ft4", toolCallId: "ft4", toolName: "bash", args: { command: "npm run typecheck" }, result: "1 error: TS2345", isError: true, running: false },
+  { kind: "tool", id: "ft5", toolCallId: "ft5", toolName: "edit", args: { path: "src/cli/print.ts" }, running: false },
+  { kind: "notice", id: "fn2", tone: "info", icon: "✦", text: "Context compacted (llm-summary) — older history was summarized into a checkpoint." },
+  { kind: "assistant", id: "fa2", text: "测试全部通过；typecheck 暴露的调用点漏改已修复，重新运行后全绿。\n\n变更摘要：\n- `printResult` 支持 `{ json?: boolean }`\n- 调用点同步更新", streaming: false, thinking: false },
+];
+
 
 /** scene=replay: fold the captured frames of a real session through the real
  *  stream reducer, so ordering bugs show up here instead of in a live run. */
@@ -226,7 +242,7 @@ store.setState({
       }
     : null,
   conversation:
-    scene === "session" || scene === "health" || scene === "audit" || scene === "changes" || scene === "approval"
+        scene === "session" || scene === "health" || scene === "audit" || scene === "changes" || scene === "approval"
       ? {
           timeline,
           guardDecisions: [
@@ -281,6 +297,19 @@ store.setState({
             ],
           },
         }
+      : scene === "fold"
+        ? {
+            timeline: FOLD_TIMELINE,
+            guardDecisions: [],
+            usage: { tokensIn: 4200, tokensOut: 900, contextTokens: 45000 },
+            providerId: "prov_primary",
+            approvalMode: "default",
+            modelId: null,
+            thinkingLevel: null,
+            pluginStates: {},
+            pluginLifecycle: [],
+            workspaceChanges: null,
+          }
       : scene === "replay"
         ? replayConversation()
         : scene === "thinking"
@@ -478,7 +507,7 @@ createRoot(document.getElementById("root")!).render(
         <SessionView
           sessionId={replay ? "session_1788997972145_z1cif" : active.id}
           goal={replay ? "你好" : active.goal}
-          status={replay ? "completed" : active.status}
+          status={replay || scene === "fold" ? "completed" : active.status}
           failureReason={null}
           modelId={replay ? "MiniMax-M2.7" : active.model.modelId}
           providerId={replay ? "prov_primary" : active.model.provider}

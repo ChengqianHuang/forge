@@ -11,6 +11,8 @@ import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
 import { ApprovalPanel } from "./ApprovalPanel.tsx";
+import { groupTurns, isFoldable, summarizeFold } from "../lib/turns.ts";
+import type { FoldableEntry } from "../lib/turns.ts";
 import type {
   ApprovalMode,
   PluginCapabilitySnapshot,
@@ -62,6 +64,27 @@ function Notice({ entry }: { entry: Extract<TimelineEntry, { kind: "notice" }> }
       <span className="notice-icon" aria-hidden="true">{entry.icon}</span>
       <span>{entry.text}</span>
     </div>
+  );
+}
+
+/** Collapsed tool/notice run of one settled turn (DSH turn-process folding).
+ * The user's prompt, the model's prose and warn notices render in place; this
+ * bar stands where the run began and expands back to the original rows. */
+function TurnFoldBar({ run, expanded, onToggle }: {
+  run: FoldableEntry[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { tools, notices, errors } = summarizeFold(run);
+  const parts: string[] = [];
+  if (tools > 0) parts.push(`${tools} 个工具调用${errors > 0 ? ` · ${errors} 个失败` : ""}`);
+  if (notices > 0) parts.push(`${notices} 条通知`);
+  return (
+    <button type="button" className="turn-fold" onClick={onToggle} aria-expanded={expanded}>
+      <span className="turn-fold-mark" aria-hidden="true">{errors > 0 ? "✕" : "✓"}</span>
+      <span>{parts.join(" · ") || "过程"}</span>
+      <span className="tool-caret" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+    </button>
   );
 }
 
@@ -171,6 +194,16 @@ export function SessionView({
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const pinnedRef = useRef(true);
   const endRef = useRef<HTMLDivElement | null>(null);
+  // Expansion memory for folded turns; keyed by the segment's first entry id.
+  // SessionView is keyed by session id, so this resets on session switch.
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
+  const toggleTurn = (id: string) =>
+    setExpandedTurns((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     let alive = true;
@@ -350,39 +383,59 @@ export function SessionView({
         <div className="conversation-canvas">
           {conversation.timeline.length === 0 && <EmptyConversation running={running} />}
 
-          {conversation.timeline.map((entry) => {
-            if (entry.kind === "user") {
+          {groupTurns(conversation.timeline, running).map((segment) => {
+            const expanded = expandedTurns.has(segment.id);
+            const collapse = segment.settled && !expanded;
+            let barEmitted = false;
+            return segment.entries.map((entry) => {
+              // A collapsed settled turn replaces its whole tool/notice run
+              // with one summary bar at the run's original position; expanding
+              // (or the live turn of a running session) renders every row.
+              if (collapse && isFoldable(entry)) {
+                if (barEmitted) return null;
+                barEmitted = true;
+                return (
+                  <TurnFoldBar
+                    key={`${segment.id}:fold`}
+                    run={segment.entries.filter(isFoldable)}
+                    expanded={false}
+                    onToggle={() => toggleTurn(segment.id)}
+                  />
+                );
+              }
+              if (entry.kind === "user") {
+                return (
+                  <article key={entry.id} className="entry entry-user">
+                    <div className="bubble-user">{entry.text}</div>
+                    {entry.pending && <span className="bubble-pending">已入队 · 下一轮送达</span>}
+                  </article>
+                );
+              }
+              if (entry.kind === "notice") return <Notice key={entry.id} entry={entry} />;
+              if (entry.kind === "tool") {
+                return (
+                  <article key={entry.id} className="entry entry-tool">
+                    <ToolRow entry={entry} />
+                  </article>
+                );
+              }
               return (
-                <article key={entry.id} className="entry entry-user">
-                  <div className="bubble-user">{entry.text}</div>
-                  {entry.pending && <span className="bubble-pending">已入队 · 下一轮送达</span>}
+                <article key={entry.id} className={`entry entry-agent${entry.streaming ? " is-streaming" : ""}`}>
+                  {entry.thinking && !entry.text ? (
+                    <div className="thinking">
+                      <span className="thinking-dots" aria-hidden="true">
+                        <i /><i /><i />
+                      </span>
+                      Thinking…
+                    </div>
+                  ) : (
+                    <div className="md">
+                      <Markdown text={entry.text} />
+                    </div>
+                  )}
                 </article>
               );
-            }
-            if (entry.kind === "notice") return <Notice key={entry.id} entry={entry} />;
-            if (entry.kind === "tool") {
-              return (
-                <article key={entry.id} className="entry entry-tool">
-                  <ToolRow entry={entry} />
-                </article>
-              );
-            }
-            return (
-              <article key={entry.id} className={`entry entry-agent${entry.streaming ? " is-streaming" : ""}`}>
-                {entry.thinking && !entry.text ? (
-                  <div className="thinking">
-                    <span className="thinking-dots" aria-hidden="true">
-                      <i /><i /><i />
-                    </span>
-                    Thinking…
-                  </div>
-                ) : (
-                  <div className="md">
-                    <Markdown text={entry.text} />
-                  </div>
-                )}
-              </article>
-            );
+            });
           })}
 
           {failureReason && (
