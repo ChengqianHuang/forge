@@ -216,8 +216,17 @@ store.setState({
   activeSessionId: scene === "landing" ? null : "s1",
   connected: true,
   theme,
+  // scene=approval — a pending guard request takes over the composer in place.
+  pendingApproval: scene === "approval"
+    ? {
+        requestId: "req_preview_1",
+        toolName: "bash",
+        message: 'forge-guard: ask by rule network-ask (bash)\n{\n  "command": "curl -s https://api.example.com/v1/models -H \'Authorization: Bearer $KEY\'"\n}',
+        at: Date.now() - 4_000,
+      }
+    : null,
   conversation:
-    scene === "session" || scene === "health" || scene === "audit" || scene === "changes"
+    scene === "session" || scene === "health" || scene === "audit" || scene === "changes" || scene === "approval"
       ? {
           timeline,
           guardDecisions: [

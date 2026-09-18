@@ -10,6 +10,7 @@ import {
 import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
+import { ApprovalPanel } from "./ApprovalPanel.tsx";
 import type {
   ApprovalMode,
   PluginCapabilitySnapshot,
@@ -139,6 +140,7 @@ export function SessionView({
   const command = store((s) => s.command);
   const abort = store((s) => s.abort);
   const resume = store((s) => s.resume);
+  const pendingApproval = store((s) => s.pendingApproval);
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
   const [resumeMessage, setResumeMessage] = useState("");
@@ -395,6 +397,9 @@ export function SessionView({
 
       <footer className="composer-wrap">
         <div className="conversation-composer">
+          {pendingApproval ? (
+            <ApprovalPanel request={pendingApproval} />
+          ) : (
           <div className="composer-box">
             {slashSuggestions.length > 0 && (
               <div className="slash-menu" role="listbox" aria-label="Slash commands">
@@ -474,6 +479,7 @@ export function SessionView({
               )}
             </div>
           </div>
+          )}
           <div className="composer-hint">
             <span><b>Enter</b> to send · <b>Shift+Enter</b> for a new line</span>
             {running && <span>Enter 发送引导 · <b>Stop</b> 按钮终止会话</span>}

@@ -4,7 +4,6 @@ import { initClient } from "./lib/api.ts";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { SessionView } from "./components/SessionView.tsx";
-import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
 import { PluginsPage } from "./components/PluginsPage.tsx";
 
@@ -19,7 +18,6 @@ export function App() {
   const activeId = store((s) => s.activeSessionId);
   const theme = store((s) => s.theme);
   const settingsOpen = store((s) => s.settingsOpen);
-  const pendingApproval = store((s) => s.pendingApproval);
   const setSettingsOpen = store((s) => s.setSettingsOpen);
   const activeProjectId = store((s) => s.activeProjectId);
 
@@ -87,7 +85,6 @@ export function App() {
           <Composer projectId={activeProjectId} />
         )}
       </main>
-      <ApprovalDialog request={pendingApproval} />
       {settingsOpen && <SettingsPage onClose={() => setSettingsOpen(false)} />}
     </div>
   );
