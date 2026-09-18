@@ -195,3 +195,61 @@ test("an optional plugin failure is isolated while the agent run completes", asy
   assert.equal(failure?.payload.required, false);
   assert.equal(failure?.payload.phase, "onAgentEvent");
 });
+
+test("the inactivity watchdog settles a runner that ignores abort — and does not call it a stop", async () => {
+  // The watchdog is the only observer of a hung provider call, and it used to
+  // clear itself immediately after abort() — so a runner that never settles
+  // left the session `running` forever with nobody left to notice. Stop has
+  // had a bounded fallback (cancelGraceMs) all along; the watchdog needs one
+  // too, and it must not route through requestStop: the user did not stop this
+  // run, so a "cancelled" record would misattribute the cause.
+  const previousIdle = process.env.FORGE_IDLE_TIMEOUT_MS;
+  const previousTimeoutGrace = process.env.FORGE_TIMEOUT_GRACE_MS;
+  process.env.FORGE_IDLE_TIMEOUT_MS = "50";
+  process.env.FORGE_TIMEOUT_GRACE_MS = "20";
+  const terminalTypes = ["SESSION_ENDED", "SESSION_FAILED", "SESSION_CANCELLED"];
+  try {
+    let resolveRun!: (session: Session) => void;
+    const agentRunner: typeof runAgent = async () =>
+      new Promise<Session>((resolve) => { resolveRun = resolve; });
+    const manager = new SessionManager({
+      forgeHome,
+      projects: new ProjectsRegistry(forgeHome),
+      approvalHub: new ApprovalHub(),
+      agentRunner,
+    });
+
+    const { sessionId } = await manager.create({ goal: "hang forever" });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.equal((await loadSession(sessionId))?.status, "running", "not settled before the watchdog trips");
+
+    // watchdogIntervalMs() floors at 250ms, so the trip plus the grace land
+    // inside this window.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    const settled = await loadSession(sessionId);
+    assert.equal(settled?.status, "failed", "a hung run must not stay running forever");
+    assert.match(settled?.failureReason ?? "", /idle timeout/i);
+    const terminals = (await readEvents(sessionId)).filter((event) =>
+      terminalTypes.includes(event.type),
+    );
+    assert.deepEqual(terminals.map((event) => event.type), ["SESSION_FAILED"]);
+    assert.equal(terminals[0]!.payload.status, "failed");
+
+    // The runtime is gone from the live map...
+    assert.equal((await manager.abort(sessionId)).ok, false);
+    // ...and a runner that finally returns cannot reopen the settled session.
+    resolveRun(settled!);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal((await loadSession(sessionId))?.status, "failed");
+    assert.equal(
+      (await readEvents(sessionId)).filter((event) => terminalTypes.includes(event.type)).length,
+      1,
+    );
+  } finally {
+    if (previousIdle === undefined) delete process.env.FORGE_IDLE_TIMEOUT_MS;
+    else process.env.FORGE_IDLE_TIMEOUT_MS = previousIdle;
+    if (previousTimeoutGrace === undefined) delete process.env.FORGE_TIMEOUT_GRACE_MS;
+    else process.env.FORGE_TIMEOUT_GRACE_MS = previousTimeoutGrace;
+  }
+});

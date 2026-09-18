@@ -17,6 +17,15 @@ function watchdogIntervalMs(): number {
 function cancelGraceMs(): number {
   return Number(process.env.FORGE_CANCEL_GRACE_MS ?? 3_000);
 }
+/**
+ * Grace between the watchdog's abort and the forced settlement of a runner
+ * that does not honour the signal. Stop is bounded by `cancelGraceMs`; the
+ * watchdog needs its own bound or a hung runner has no settlement path at all
+ * (the watchdog — its only observer — clears itself right after aborting).
+ */
+function timeoutGraceMs(): number {
+  return Number(process.env.FORGE_TIMEOUT_GRACE_MS ?? 5_000);
+}
 function shutdownGraceMs(): number {
   return Number(process.env.FORGE_SHUTDOWN_GRACE_MS ?? 5_000);
 }
@@ -105,12 +114,21 @@ type SessionRuntime = {
   /** The one terminal commit for this run. All completion paths share it. */
   finalizePromise: Promise<void> | null;
   cancelTimer?: ReturnType<typeof setTimeout> | undefined;
+  /** Bounded fallback after the watchdog abort, for a runner that ignores it. */
+  timeoutTimer?: ReturnType<typeof setTimeout> | undefined;
 };
 
 type RunOutcome =
   | { kind: "result"; final: Session }
   | { kind: "error"; error: unknown }
-  | { kind: "cancelled" };
+  | { kind: "cancelled" }
+  /**
+   * The inactivity watchdog fired and the runner still had not settled after
+   * `timeoutGraceMs()`. Distinct from "cancelled" on purpose: the user did not
+   * stop this run, and `stopped` must stay false so the terminal status is
+   * `failed` with the idle-timeout reason rather than a user cancellation.
+   */
+  | { kind: "timeout" };
 
 /**
  * Sessions in these terminal states can be resumed. `running` is forbidden
@@ -486,13 +504,25 @@ export class SessionManager {
     this.runtimes.set(sessionId, runtime);
 
     // Inactivity watchdog: a hung provider call produces no events, so the
-    // clock runs out and we abort the run; the catch handler below records
-    // it as a timeout failure (with a resume hint), not a user cancellation.
+    // clock runs out and we abort the run; the loop's own catch handler then
+    // records it as a timeout failure (with a resume hint), not a user
+    // cancellation.
     runtime.watchdog = setInterval(() => {
       if (!runtime.stopRequested && !runtime.finalizePromise && Date.now() - runtime.lastActivityAt > idleTimeoutMs()) {
         runtime.timedOut = true;
         runtime.controller.abort();
         this.clearWatchdog(runtime);
+        // Aborting is a request, not a guarantee. Stop is bounded by
+        // cancelGraceMs for exactly this reason; without the same bound here a
+        // runner that ignores the abort leaves the session `running` forever —
+        // the watchdog was its only observer and has just cleared itself. The
+        // forced settlement deliberately does NOT route through requestStop:
+        // that would set stopRequested and record "cancelled", misattributing
+        // a run the user never stopped.
+        runtime.timeoutTimer = setTimeout(() => {
+          void this.finalizeRun(sessionId, runtime, { kind: "timeout" }).catch(() => {});
+        }, timeoutGraceMs());
+        runtime.timeoutTimer.unref?.();
       }
     }, watchdogIntervalMs());
     // Never keep the process alive for the watchdog alone.
@@ -710,6 +740,10 @@ export class SessionManager {
     if (runtime.cancelTimer) {
       clearTimeout(runtime.cancelTimer);
       runtime.cancelTimer = undefined;
+    }
+    if (runtime.timeoutTimer) {
+      clearTimeout(runtime.timeoutTimer);
+      runtime.timeoutTimer = undefined;
     }
     if (this.runtimes.get(sessionId) === runtime) this.runtimes.delete(sessionId);
     this.opts.approvalHub.cancelSession(sessionId);

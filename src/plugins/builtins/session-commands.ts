@@ -5,7 +5,9 @@ export const sessionCommandsPlugin: ForgePlugin = {
     id: "forge.session-commands",
     name: "Session commands",
     version: "1.0.0",
-    capabilities: ["slash-command", "ui"],
+    // Slash commands only — the results are shown by the kernel's notice
+    // timeline, so declaring "ui" claimed a surface this plugin does not own.
+    capabilities: ["slash-command"],
     slashCommands: [
       { name: "compact", description: "Compact context at the next turn boundary" },
       { name: "status", description: "Show the current session status" },

@@ -469,7 +469,7 @@ createRoot(document.getElementById("root")!).render(
     {scene === "health" && (
       <CapabilityHealthDialog
         plugins={[
-          { id: "forge.usage", name: "Usage meter", version: "1.0.0", capabilities: ["guardrail", "event-subscriber", "ui"], required: true, status: "active" },
+          { id: "forge.usage", name: "Usage meter", version: "1.0.0", capabilities: ["event-subscriber"], required: true, status: "active" },
           { id: "forge.capability-health", name: "Capability Health", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
           { id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
           { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },

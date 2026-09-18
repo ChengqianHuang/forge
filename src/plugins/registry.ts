@@ -72,6 +72,32 @@ export class PluginRegistry {
         throw new Error(`UI contribution ${plugin.manifest.id}/${contribution.id} references unknown read action ${contribution.readAction}`);
       }
     }
+    // `capabilities` is the key a host filters on when activating, while
+    // `slashCommands` and `ui` are projected to consumers straight from the
+    // manifest. Drift therefore has a user-visible consequence: a UI panel
+    // projected for a plugin that never declared "ui" renders with no backing
+    // capability, and a plugin claiming "ui" with no contribution claims a
+    // surface that does not exist. Both directions are rejected here —
+    // declaration and implementation must agree, because the manifest is what
+    // the capability panel shows.
+    //
+    // What cannot be checked statically: "tool", "guardrail" and
+    // "event-subscriber" contributions exist only after `activate()`, and
+    // "slash-command" is legitimately declared by plugins that contribute
+    // their commands at activation (the manifest array is optional). So this
+    // guard covers the UI surface in both directions plus one side of
+    // slash-command — not every capability word.
+    const declared = new Set(plugin.manifest.capabilities);
+    const hasUi = (plugin.manifest.ui?.length ?? 0) > 0;
+    if (declared.has("ui") && !hasUi) {
+      throw new Error(`plugin ${plugin.manifest.id} declares capability "ui" without a UI contribution`);
+    }
+    if (!declared.has("ui") && hasUi) {
+      throw new Error(`plugin ${plugin.manifest.id} contributes UI without declaring the "ui" capability`);
+    }
+    if ((plugin.manifest.slashCommands?.length ?? 0) > 0 && !declared.has("slash-command")) {
+      throw new Error(`plugin ${plugin.manifest.id} declares slash commands without the "slash-command" capability`);
+    }
     this.plugins.set(plugin.manifest.id, plugin);
   }
 

@@ -74,7 +74,10 @@ This bounds loops; it does not judge whether the model's finished work is good.
 Output truncation, empty responses and provider errors receive bounded steering
 retries. Successful recovery remains invisible noise; exhausted recovery is
 surfaced to the user. The session watchdog separately aborts a provider call
-that produces no activity for the configured interval.
+that produces no activity for the configured interval, and force-settles the
+session as `failed` after a bounded grace if the runner does not honour that
+abort — a hung run is never left `running`, and it is never recorded as a user
+cancellation.
 
 ## Usage
 

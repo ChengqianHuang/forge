@@ -135,8 +135,12 @@ reclassified as a resumable failure and records `SESSION_INTERRUPTED` plus one
 terminal `SESSION_FAILED`. During a live run, success, error, watchdog timeout,
 user Stop and shutdown converge on one idempotent finalizer. Stop has precedence
 over later errors, the runtime event gate closes before teardown, pending
-approvals are expired, and plugin/process cleanup is bounded. A late provider
-result therefore cannot reopen or double-settle a cancelled session.
+approvals are expired, and plugin/process cleanup is bounded. Stop and the
+watchdog are each bounded by their own grace timer (`cancelGraceMs` /
+`timeoutGraceMs`), so a runner that ignores the abort signal is still settled —
+as `failed` with the idle-timeout reason, never as `cancelled`, which would
+blame the user for a run they did not stop. A late provider result therefore
+cannot reopen or double-settle a settled session.
 
 ## Reliability projection
 

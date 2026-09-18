@@ -9,7 +9,13 @@ export const usagePlugin: ForgePlugin = {
     name: "Usage meter",
     version: "1.0.0",
     required: true,
-    capabilities: ["guardrail", "event-subscriber", "ui"],
+    // Only "event-subscriber" is true: activate() contributes a session
+    // service and an agent-event subscriber, and nothing else. It used to
+    // claim "guardrail" (no hooks) and "ui" (no UI contribution, no read
+    // action) — the token meter the user sees is a kernel component, not this
+    // plugin's surface. The session service has no word in PluginCapability,
+    // so it is not declared at all.
+    capabilities: ["event-subscriber"],
   },
   activate(context) {
     const tracker = new UsageTracker();

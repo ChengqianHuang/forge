@@ -87,7 +87,9 @@ describe("PluginRegistry", () => {
         id: "test.slow-reader",
         name: "slow reader",
         version: "1",
-        capabilities: ["ui"],
+        // Read actions are not a declared capability kind (PluginCapability
+        // has no "read" word), and this plugin contributes no UI.
+        capabilities: [],
         readActions: [{ id: "inspect", description: "inspect" }],
       },
       activate: () => ({}),
@@ -129,11 +131,56 @@ describe("PluginRegistry", () => {
         id: "test.missing-reader",
         name: "missing reader",
         version: "1",
-        capabilities: ["ui"],
+        capabilities: [],
         readActions: [{ id: "inspect", description: "inspect" }],
       },
       activate: () => ({}),
     }), /without a read handler/);
+  });
+
+  test("rejects a declared capability with no matching manifest surface", () => {
+    // `forge.usage` shipped exactly this: ["guardrail", "event-subscriber",
+    // "ui"] with no UI contribution and no read action. The manifest is what
+    // the capability panel shows, so an over-declaration is a lie on a
+    // user-visible surface, not a cosmetic detail.
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.over-declared",
+        name: "over",
+        version: "1",
+        capabilities: ["ui", "event-subscriber"],
+      },
+      activate: () => ({}),
+    }), /declares capability "ui" without a UI contribution/);
+  });
+
+  test("rejects a manifest surface whose capability was not declared", () => {
+    // The reverse drift is worse: the panel is projected from the manifest
+    // before activation, so a host filtering on the capability that was never
+    // declared would activate nothing behind a button that already rendered.
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.under-declared",
+        name: "under",
+        version: "1",
+        capabilities: [],
+        slashCommands: [{ name: "go", description: "" }],
+      },
+      activate: () => ({}),
+    }), /slash commands without the "slash-command" capability/);
+
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.under-declared-ui",
+        name: "under ui",
+        version: "1",
+        capabilities: ["tool"],
+        ui: [{ id: "panel", label: "Panel", surface: "session-header", renderer: "x" }],
+      },
+      activate: () => ({}),
+    }), /contributes UI without declaring the "ui" capability/);
   });
 
   test("rejects duplicate plugin ids", () => {
