@@ -23,10 +23,10 @@ import { Composer } from "./components/Composer.tsx";
 import { ModelPicker } from "./components/ModelPicker.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
 import { PluginsPage } from "./components/PluginsPage.tsx";
-import { CapabilityHealthDialog } from "./components/CapabilityHealthDialog.tsx";
-import { GuardAuditDialog } from "./components/GuardAuditDialog.tsx";
-import { ReliabilityDialog } from "./components/ReliabilityDialog.tsx";
-import { WorkspaceChangesDialog } from "./components/WorkspaceChangesDialog.tsx";
+import { CapabilityHealthContent } from "./components/CapabilityHealthDialog.tsx";
+import { GuardAuditContent } from "./components/GuardAuditDialog.tsx";
+import { ReliabilityContent } from "./components/ReliabilityDialog.tsx";
+import { WorkspaceChangesContent } from "./components/WorkspaceChangesDialog.tsx";
 import { REPLAY } from "./__replay.ts";
 import type { EventEnvelope, TimelineEntry } from "./types.ts";
 import "./styles.css";
@@ -242,7 +242,7 @@ store.setState({
       }
     : null,
   conversation:
-        scene === "session" || scene === "health" || scene === "audit" || scene === "changes" || scene === "approval"
+        scene === "session" || scene === "health" || scene === "audit" || scene === "changes" || scene === "approval" || scene === "dock"
       ? {
           timeline,
           guardDecisions: [
@@ -496,6 +496,69 @@ const PREVIEW_PROVIDERS = [
   { id: "anthropic", api: "anthropic-messages" as const, modelId: "claude-sonnet-4-6", baseUrl: "https://api.anthropic.com", apiKey: "" },
 ];
 
+/** Modal-like fixed pane so former dialog scenes can host content components. */
+function PreviewPane({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 90, display: "grid", placeItems: "center", background: "rgba(0,0,0,0.35)" }}>
+      <div className="modal modal-lg" style={{ display: "flex", flexDirection: "column", maxHeight: "80vh" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+if (scene === "dock") {
+  // Seed the per-session dock layout so the scene opens docked without clicks.
+  localStorage.setItem("forge.dock.v1.s1", JSON.stringify({ open: true, tab: "workspace-changes", width: 440 }));
+  // Mock the capabilities endpoint so dock tabs render without a live sidecar.
+  const sampleCapabilities = {
+    plugins: [
+      { id: "forge.capability-health", name: "Capability Health", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
+      { id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
+      { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["read-action", "ui"], required: true, status: "active" },
+      { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "read-action", "ui"], required: false, status: "active" },
+    ],
+    slashCommands: [],
+    uiContributions: [
+      { id: "capability-health", label: "能力", surface: "session-header", renderer: "capability-health", pluginId: "forge.capability-health" },
+      { id: "guard-audit", label: "审计", surface: "session-header", renderer: "guard-audit", pluginId: "forge.guard-audit" },
+      { id: "reliability", label: "诊断", surface: "session-header", renderer: "reliability", pluginId: "forge.reliability" },
+      { id: "workspace-changes", label: "变更", surface: "session-header", renderer: "workspace-changes", readAction: "diff", pluginId: "forge.workspace-changes" },
+    ],
+  };
+  const realFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.endsWith("/capabilities") && !init?.method) {
+      return Promise.resolve(new Response(JSON.stringify(sampleCapabilities), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/read/diff") && !init?.method) {
+      const path = new URL(url).searchParams.get("path") ?? "unknown";
+      return Promise.resolve(new Response(JSON.stringify({
+        path,
+        kind: "text",
+        truncated: false,
+        bytes: 286,
+        patch: [
+          `diff --git a/${path} b/${path}`,
+          `--- a/${path}`,
+          `+++ b/${path}`,
+          "@@ -1,4 +1,8 @@",
+          " export function parseArgs(argv: string[]) {",
+          "+  const json = argv.includes(\"--json\");",
+          "   return {",
+          "-    verbose: argv.includes(\"--verbose\"),",
+          "+    verbose: argv.includes(\"--verbose\"),",
+          "+    json,",
+          "   };",
+          " }",
+        ].join("\n"),
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    return realFetch(input, init);
+  };
+}
+
 createRoot(document.getElementById("root")!).render(
   <>
     <Shell>
@@ -545,10 +608,10 @@ createRoot(document.getElementById("root")!).render(
       </div>
     )}
     {scene === "reliability" && (
-      <ReliabilityDialog
+      <PreviewPane>
+      <ReliabilityContent
         loading={false}
         error={null}
-        onClose={() => {}}
         metrics={{
           eventCount: 184,
           wallMs: 48_200,
@@ -561,15 +624,16 @@ createRoot(document.getElementById("root")!).render(
           integrity: { healthy: true, violations: [] },
         }}
       />
+      </PreviewPane>
     )}
     {scene === "audit" && (
-      <GuardAuditDialog
-        decisions={store.getState().conversation.guardDecisions}
-        onClose={() => {}}
-      />
+      <PreviewPane>
+        <GuardAuditContent decisions={store.getState().conversation.guardDecisions} />
+      </PreviewPane>
     )}
     {scene === "health" && (
-      <CapabilityHealthDialog
+      <PreviewPane>
+      <CapabilityHealthContent
         plugins={[
           { id: "forge.usage", name: "Usage meter", version: "1.0.0", capabilities: ["event-subscriber"], required: true, status: "active" },
           { id: "forge.capability-health", name: "Capability Health", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
@@ -583,13 +647,13 @@ createRoot(document.getElementById("root")!).render(
         busyPluginId={null}
         error={null}
         onToggle={() => {}}
-        onClose={() => {}}
       />
+      </PreviewPane>
     )}
     {scene === "changes" && store.getState().conversation.workspaceChanges && (
-      <WorkspaceChangesDialog
+      <PreviewPane>
+      <WorkspaceChangesContent
         changes={store.getState().conversation.workspaceChanges!}
-        onClose={() => {}}
         readDiff={async (path) => ({
           path,
           kind: "text",
@@ -611,6 +675,7 @@ createRoot(document.getElementById("root")!).render(
           ].join("\n"),
         })}
       />
+      </PreviewPane>
     )}
   </>,
 );

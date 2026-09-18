@@ -8,12 +8,13 @@ const OUTCOME_LABEL: Record<GuardDecisionView["outcome"], string> = {
   aborted: "已中止",
 };
 
-function GuardAudit({ decisions }: { decisions: GuardDecisionView[] }) {
+/** Durable guard decisions, rendered inside the right dock. */
+export function GuardAuditContent({ decisions }: { decisions: GuardDecisionView[] }) {
   if (decisions.length === 0) {
-    return <div className="audit-empty">此会话还没有可审计的工具决策。</div>;
+    return <div className="dock-empty">此会话还没有可审计的工具决策。</div>;
   }
   return (
-    <div className="audit-list">
+    <div className="dock-scroll audit-list">
       {[...decisions].reverse().map((decision) => (
         <article className="audit-row" key={decision.decisionId}>
           <div className="audit-row-head">
@@ -34,31 +35,6 @@ function GuardAudit({ decisions }: { decisions: GuardDecisionView[] }) {
           <div className="audit-reason">{decision.reason}</div>
         </article>
       ))}
-    </div>
-  );
-}
-
-export function GuardAuditDialog({
-  decisions,
-  onClose,
-}: {
-  decisions: GuardDecisionView[];
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal modal-lg audit-modal">
-        <div className="modal-head">
-          <div>
-            <h3 className="modal-title">Guard 审计</h3>
-            <div className="modal-sub">来自事件日志的最终决策，不重新执行或推测历史策略。</div>
-          </div>
-          <button className="btn btn-ghost btn-small" onClick={onClose}>关闭</button>
-        </div>
-        <div className="modal-scroll">
-          <GuardAudit decisions={decisions} />
-        </div>
-      </div>
     </div>
   );
 }

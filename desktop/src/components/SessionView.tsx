@@ -11,6 +11,7 @@ import { Markdown } from "./Markdown.tsx";
 import { ModelPicker } from "./ModelPicker.tsx";
 import { SessionCapabilityActions } from "./SessionCapabilityActions.tsx";
 import { ApprovalPanel } from "./ApprovalPanel.tsx";
+import { RightDock, loadDockState, saveDockState, type DockState } from "./RightDock.tsx";
 import { groupTurns, isFoldable, summarizeFold } from "../lib/turns.ts";
 import type { FoldableEntry } from "../lib/turns.ts";
 import type {
@@ -204,6 +205,15 @@ export function SessionView({
       else next.add(id);
       return next;
     });
+  // Per-session right dock layout, persisted across reloads.
+  const [dock, setDock] = useState<DockState>(() => loadDockState(sessionId));
+  const updateDock = (patch: Partial<DockState>) =>
+    setDock((current) => {
+      const next = { ...current, ...patch };
+      saveDockState(sessionId, next);
+      return next;
+    });
+  const openDockTab = (renderer: string) => updateDock({ open: true, tab: renderer });
 
   useEffect(() => {
     let alive = true;
@@ -315,10 +325,9 @@ export function SessionView({
           <TokenMeter usage={conversation.usage} contextWindow={contextWindow} />
           <div className="head-actions">
             <SessionCapabilityActions
-              sessionId={sessionId}
               capabilities={pluginCapabilities}
               conversation={conversation}
-              running={running}
+              onOpenTab={openDockTab}
             />
             {resumable && (
               <button
@@ -379,6 +388,8 @@ export function SessionView({
         </div>
       )}
 
+      <div className="session-body">
+      <div className="session-main">
       <div className="conversation-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="conversation-canvas">
           {conversation.timeline.length === 0 && <EmptyConversation running={running} />}
@@ -540,6 +551,21 @@ export function SessionView({
           </div>
         </div>
       </footer>
+      </div>
+      {dock.open && pluginCapabilities && (
+        <RightDock
+          sessionId={sessionId}
+          capabilities={pluginCapabilities}
+          conversation={conversation}
+          running={running}
+          tab={dock.tab}
+          width={dock.width}
+          onTabChange={(tab) => updateDock({ tab })}
+          onWidthChange={(width) => updateDock({ width })}
+          onClose={() => updateDock({ open: false })}
+        />
+      )}
+      </div>
     </div>
   );
 }

@@ -32,13 +32,12 @@ function ChangeRow({ file, selected, onSelect }: { file: WorkspaceChangeView; se
   );
 }
 
-export function WorkspaceChangesDialog({
+/** Workspace changes + per-file diff, rendered inside the right dock. */
+export function WorkspaceChangesContent({
   changes,
-  onClose,
   readDiff,
 }: {
   changes: WorkspaceChangesView;
-  onClose: () => void;
   readDiff?: (path: string) => Promise<WorkspaceFileDiff>;
 }) {
   const changedNow = changes.files.filter((file) => file.changedDuringSession).length;
@@ -66,63 +65,53 @@ export function WorkspaceChangesDialog({
       if (request === requestSequence.current) setLoading(false);
     }
   };
+  if (!changes.supported) {
+    return (
+      <div className="dock-empty">
+        {changes.reason === "not-git" ? "当前工作区不是 Git 仓库。" : "暂时无法读取 Git 工作区状态。"}
+      </div>
+    );
+  }
+  if (changes.phase === "baseline") {
+    return <div className="dock-empty">Agent 尚未结束；会话基线已经记录，结束后会显示净变化。</div>;
+  }
+  if (changes.files.length === 0) {
+    return <div className="dock-empty">工作区没有未提交变化。</div>;
+  }
   return (
-    <div className="modal-backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal modal-lg changes-modal">
-        <div className="modal-head">
-          <div>
-            <h3 className="modal-title">工作区变更</h3>
-            <div className="modal-sub">
-              当前 Git 净变化；会话前已有的修改会单独标记，不归因给 Agent。
-            </div>
-          </div>
-          <button className="btn btn-ghost btn-small" onClick={onClose}>关闭</button>
+    <div className="dock-changes">
+      <div className="changes-summary">
+        <strong>{changes.files.length}</strong> 个文件有净变化
+        <span>·</span>
+        <strong>{changedNow}</strong> 个在本次会话中发生变化
+      </div>
+      <div className="dock-scroll changes-body">
+        <div className="change-list">
+          {changes.files.map((file) => (
+            <ChangeRow
+              key={file.path}
+              file={file}
+              selected={selectedPath === file.path}
+              onSelect={() => void select(file.path)}
+            />
+          ))}
         </div>
-        {!changes.supported ? (
-          <div className="changes-empty">
-            {changes.reason === "not-git" ? "当前工作区不是 Git 仓库。" : "暂时无法读取 Git 工作区状态。"}
-          </div>
-        ) : changes.phase === "baseline" ? (
-          <div className="changes-empty">Agent 尚未结束；会话基线已经记录，结束后会显示净变化。</div>
-        ) : changes.files.length === 0 ? (
-          <div className="changes-empty">工作区没有未提交变化。</div>
-        ) : (
-          <>
-            <div className="changes-summary">
-              <strong>{changes.files.length}</strong> 个文件有净变化
-              <span>·</span>
-              <strong>{changedNow}</strong> 个在本次会话中发生变化
-            </div>
-            <div className="modal-scroll changes-body">
-              <div className="change-list">
-                {changes.files.map((file) => (
-                  <ChangeRow
-                    key={file.path}
-                    file={file}
-                    selected={selectedPath === file.path}
-                    onSelect={() => void select(file.path)}
-                  />
-                ))}
+        <div className="diff-view">
+          {!selectedPath && <div className="diff-placeholder">选择文件查看当前 Git diff</div>}
+          {selectedPath && loading && <div className="diff-placeholder">正在读取 {selectedPath}…</div>}
+          {error && <div className="diff-error">{error}</div>}
+          {diff?.kind === "binary" && <div className="diff-placeholder">二进制文件不显示文本 diff。</div>}
+          {diff?.kind === "empty" && <div className="diff-placeholder">该路径当前没有可显示的文本 diff。</div>}
+          {diff?.kind === "text" && (
+            <>
+              <div className="diff-head">
+                <code>{diff.path}</code>
+                <span>{Math.ceil(diff.bytes / 1024)} KB{diff.truncated ? " · 已截断" : ""}</span>
               </div>
-              <div className="diff-view">
-                {!selectedPath && <div className="diff-placeholder">选择文件查看当前 Git diff</div>}
-                {selectedPath && loading && <div className="diff-placeholder">正在读取 {selectedPath}…</div>}
-                {error && <div className="diff-error">{error}</div>}
-                {diff?.kind === "binary" && <div className="diff-placeholder">二进制文件不显示文本 diff。</div>}
-                {diff?.kind === "empty" && <div className="diff-placeholder">该路径当前没有可显示的文本 diff。</div>}
-                {diff?.kind === "text" && (
-                  <>
-                    <div className="diff-head">
-                      <code>{diff.path}</code>
-                      <span>{Math.ceil(diff.bytes / 1024)} KB{diff.truncated ? " · 已截断" : ""}</span>
-                    </div>
-                    <pre className="diff-patch">{diff.patch}</pre>
-                  </>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+              <pre className="diff-patch">{diff.patch}</pre>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
