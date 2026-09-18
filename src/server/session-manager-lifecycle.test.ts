@@ -253,3 +253,53 @@ test("the inactivity watchdog settles a runner that ignores abort — and does n
     else process.env.FORGE_TIMEOUT_GRACE_MS = previousTimeoutGrace;
   }
 });
+
+test("global plugin preferences reach activation: config resolved, user-disabled plugins skipped", async () => {
+  const activated: Array<{ id: string; config: Record<string, unknown> }> = [];
+  const registry = new PluginRegistry();
+  registry.register({
+    manifest: {
+      id: "test.prefs-probe",
+      name: "Prefs Probe",
+      version: "0.0.1",
+      capabilities: ["event-subscriber"],
+      configSchema: [{ key: "threshold", label: "threshold", type: "number", default: 1 }],
+    },
+    activate: (_context, config) => {
+      activated.push({ id: "test.prefs-probe", config: { ...config } });
+      return {};
+    },
+  });
+  registry.register({
+    manifest: {
+      id: "test.prefs-off",
+      name: "Prefs Off",
+      version: "0.0.1",
+      capabilities: ["event-subscriber"],
+    },
+    activate: () => {
+      activated.push({ id: "test.prefs-off", config: {} });
+      return {};
+    },
+  });
+  const manager = new SessionManager({
+    forgeHome,
+    projects: new ProjectsRegistry(forgeHome),
+    approvalHub: new ApprovalHub(),
+    agentRunner: async () => new Promise<Session>(() => {}),
+    plugins: registry,
+  });
+  await manager.setGlobalPluginEnabled("test.prefs-off", false);
+  await manager.setGlobalPluginConfig("test.prefs-probe", { threshold: 7 });
+
+  await manager.create({ goal: "prefs reach activation" });
+  const probe = activated.find((entry) => entry.id === "test.prefs-probe");
+  assert.ok(probe, "configured plugin must activate with its resolved config");
+  assert.equal(probe.config.threshold, 7);
+  assert.equal(
+    activated.some((entry) => entry.id === "test.prefs-off"),
+    false,
+    "globally user-disabled plugin must not activate",
+  );
+  await manager.shutdown();
+});

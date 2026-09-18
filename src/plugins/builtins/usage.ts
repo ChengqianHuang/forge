@@ -8,6 +8,7 @@ export const usagePlugin: ForgePlugin = {
     id: "forge.usage",
     name: "Usage meter",
     version: "1.0.0",
+    description: "会话 token 记账与上下文水位，内核令牌表的数据源。",
     required: true,
     // Only "event-subscriber" is true: activate() contributes a session
     // service and an agent-event subscriber, and nothing else. It used to

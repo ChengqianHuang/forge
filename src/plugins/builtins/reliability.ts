@@ -9,6 +9,7 @@ export const reliabilityPlugin: ForgePlugin = {
     id: "forge.reliability",
     name: "Harness Reliability",
     version: "1.0.0",
+    description: "从事件日志投影的运行承诺核对：护栏覆盖、审批延迟、取消与恢复。",
     required: true,
     capabilities: ["read-action", "ui"],
     readActions: [{ id: "metrics", description: "Project harness reliability from the session event log" }],

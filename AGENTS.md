@@ -347,6 +347,7 @@ Every guardrail must have a UI entry point.
 | Abort/resume | Stop button + Resume button (completed = follow-up) |
 | Capability lifecycle | Registered Capability Health panel (required/optional + active/disabled/failed/disposed + lifecycle) |
 | Guard decision history | Registered session-header contribution, projected from `GUARD_DECISION` events |
+| Plugin management (global) | PluginsPage 全局页（侧栏入口）— 目录 / 启停 / 配置表单；全局偏好持久化于 `<forgeHome>/plugin-prefs.json`，会话激活时与事件日志折叠合入 |
 
 The run-config popover holds **two orthogonal axes**. Do not merge them into
 one control or reuse one name for another:

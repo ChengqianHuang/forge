@@ -7,6 +7,7 @@ export const guardAuditPlugin: ForgePlugin = {
     id: "forge.guard-audit",
     name: "Guard Audit",
     version: "1.0.0",
+    description: "核心护栏裁决历史的审计检视面板。",
     required: true,
     capabilities: ["ui"],
     ui: [{

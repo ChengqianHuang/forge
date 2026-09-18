@@ -14,6 +14,7 @@ test("projects reliability from the event log without activating runtime state",
   const result = await reliabilityPlugin.read?.("metrics", {}, {
     session,
     signal: new AbortController().signal,
+    config: {},
   }) as { eventCount: number; integrity: { healthy: boolean } };
   assert.equal(result.eventCount, 0);
   assert.equal(result.integrity.healthy, true);

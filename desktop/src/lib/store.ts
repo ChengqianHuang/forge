@@ -36,6 +36,8 @@ export interface DesktopState {
   error: string | null;
   theme: "dark" | "light";
   settingsOpen: boolean;
+  /** Global plugin manager page occupies the main area while true. */
+  pluginsOpen: boolean;
   /**
    * Registered projects + the active one. Lifted out of Sidebar-local state so
    * a new session is created against the project the user actually picked
@@ -64,6 +66,7 @@ export interface DesktopState {
   deny: (requestId: string) => Promise<void>;
   toggleTheme: () => void;
   setSettingsOpen: (open: boolean) => void;
+  setPluginsOpen: (open: boolean) => void;
   resetConversation: () => void;
 }
 
@@ -637,6 +640,7 @@ export const store = create<DesktopState>((set, get) => ({
   error: null,
   theme: (localStorage.getItem("forge-theme") as "dark" | "light") || "dark",
   settingsOpen: false,
+  pluginsOpen: false,
   projects: [],
   activeProjectId: null,
 
@@ -687,6 +691,7 @@ export const store = create<DesktopState>((set, get) => ({
       conversation: emptyConversation(),
       pendingApproval: null,
       error: null,
+      pluginsOpen: false,
     });
     if (!id) return;
 
@@ -809,6 +814,8 @@ export const store = create<DesktopState>((set, get) => ({
   },
 
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+
+  setPluginsOpen: (open) => set({ pluginsOpen: open }),
 
   resetConversation: () => set({ conversation: emptyConversation() }),
 }));

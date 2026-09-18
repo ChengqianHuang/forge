@@ -9,6 +9,7 @@ import type {
   Session,
   ThinkingLevel,
   PluginCapabilitySnapshot,
+  PluginCatalogEntryView,
 } from "../types.ts";
 
 export type DesktopConfig = { baseUrl: string; token: string };
@@ -97,6 +98,29 @@ export async function readCapability<T>(
 
 export async function setSessionPluginEnabled(id: string, pluginId: string, enabled: boolean): Promise<void> {
   await send(`/sessions/${id}/plugins/${encodeURIComponent(pluginId)}`, "POST", { enabled });
+}
+
+// --- plugin manager (global) ---
+
+export async function fetchPlugins(): Promise<PluginCatalogEntryView[]> {
+  return (await getJson<{ plugins: PluginCatalogEntryView[] }>("/plugins")).plugins;
+}
+
+export async function setGlobalPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
+  await send(`/plugins/${encodeURIComponent(pluginId)}/enabled`, "POST", { enabled });
+}
+
+/** Returns the resolved config (defaults merged) so the UI shows what will apply. */
+export async function savePluginConfig(
+  pluginId: string,
+  config: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const result = await send<{ config: Record<string, unknown> }>(
+    `/plugins/${encodeURIComponent(pluginId)}/config`,
+    "PUT",
+    { config },
+  );
+  return result.config;
 }
 
 export async function abortSession(id: string): Promise<void> {

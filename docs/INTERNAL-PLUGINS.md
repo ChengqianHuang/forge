@@ -96,6 +96,29 @@ permanent preference: the next run creates a fresh instance and may recover.
 Required capabilities ignore historical disable choices written before the
 required boundary existed.
 
+### Global preferences and config (the manager page)
+
+The desktop plugin manager page (`GET /plugins`,
+`POST /plugins/:id/enabled`, `PUT /plugins/:id/config`) operates on the
+**global layer**, persisted in `<forgeHome>/plugin-prefs.json`:
+
+- `disabled[]` — optional plugin ids the user turned off globally. Session
+  activation unions this with the session event log's own `PLUGIN_DISABLED`
+  fold (`plugins/state.ts`), so a session-scoped pause and a global preference
+  compose without overwriting each other.
+- `config{}` — per-plugin config values. A plugin declares its parameters in
+  the manifest (`configSchema`: string/number/boolean/enum fields with
+  defaults). The registry validates the schema at registration, resolves
+  stored values against it before `activate(context, config)` and
+  `read(action, input, ctx)` see them, and rejects unknown or wrong-shaped
+  values at the HTTP boundary — a typo surfaces as an error, never as a
+  silently ignored key.
+
+A plugin disabled at activation is **not mounted**: `activate()` does not run
+and no resources are acquired. Toggling it on mid-session mounts it on demand
+(contributions conflict-checked against everything already mounted). This is
+the DSH form: disabled means not present, not present-but-gated.
+
 This is cooperative in-process isolation, not a security sandbox. Forge-owned
 plugins are trusted code. A CPU-blocking module can still block the monolith;
 the registry must not claim process isolation it does not provide.

@@ -7,10 +7,29 @@ import { promisify } from "node:util";
 import type { ForgePlugin } from "../types.ts";
 
 const execFileAsync = promisify(execFile);
-const GIT_TIMEOUT_MS = 4_000;
+const DEFAULT_GIT_TIMEOUT_MS = 4_000;
 const GIT_MAX_BUFFER = 4 * 1024 * 1024;
 const DIFF_MAX_BUFFER = 2 * 1024 * 1024;
-const DIFF_RETURN_BYTES = 256 * 1024;
+const DEFAULT_DIFF_RETURN_BYTES = 256 * 1024;
+
+/** User-tunable limits, declared in the manifest's configSchema and resolved
+ * by the registry before activate()/read() ever see them. */
+export type WorkspaceChangesConfig = {
+  gitTimeoutMs: number;
+  diffMaxBytes: number;
+};
+
+export function resolveWorkspaceChangesConfig(
+  config: Record<string, unknown> | undefined,
+): WorkspaceChangesConfig {
+  const timeout = typeof config?.gitTimeoutMs === "number" && Number.isFinite(config.gitTimeoutMs)
+    ? Math.max(250, Math.floor(config.gitTimeoutMs))
+    : DEFAULT_GIT_TIMEOUT_MS;
+  const diffBytes = typeof config?.diffMaxBytes === "number" && Number.isFinite(config.diffMaxBytes)
+    ? Math.max(1024, Math.floor(config.diffMaxBytes))
+    : DEFAULT_DIFF_RETURN_BYTES;
+  return { gitTimeoutMs: timeout, diffMaxBytes: diffBytes };
+}
 
 export type WorkspaceChange = {
   path: string;
@@ -53,11 +72,11 @@ type RawSnapshot = {
   reason?: "not-git" | "git-error";
 };
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(cwd: string, args: string[], timeoutMs: number): Promise<string> {
   const { stdout } = await execFileAsync("git", args, {
     cwd,
     encoding: "utf8",
-    timeout: GIT_TIMEOUT_MS,
+    timeout: timeoutMs,
     maxBuffer: GIT_MAX_BUFFER,
     windowsHide: true,
   });
@@ -107,10 +126,10 @@ async function fileHash(repoRoot: string, path: string): Promise<string | null> 
   });
 }
 
-async function captureRaw(workspace: string): Promise<RawSnapshot> {
+async function captureRaw(workspace: string, config: WorkspaceChangesConfig): Promise<RawSnapshot> {
   let repoRoot: string;
   try {
-    repoRoot = (await git(workspace, ["rev-parse", "--show-toplevel"])).trim();
+    repoRoot = (await git(workspace, ["rev-parse", "--show-toplevel"], config.gitTimeoutMs)).trim();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -123,10 +142,10 @@ async function captureRaw(workspace: string): Promise<RawSnapshot> {
 
   try {
     const [porcelain, numstat] = await Promise.all([
-      git(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."]),
+      git(workspace, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."], config.gitTimeoutMs),
       // A freshly initialized repository has no HEAD yet. Status is still
       // useful there; only the tracked line counts are unavailable.
-      git(workspace, ["diff", "HEAD", "--numstat", "--", "."]).catch(() => ""),
+      git(workspace, ["diff", "HEAD", "--numstat", "--", "."], config.gitTimeoutMs).catch(() => ""),
     ]);
     const stats = parseNumstat(numstat);
     const entries = parsePorcelain(porcelain);
@@ -153,8 +172,9 @@ async function captureRaw(workspace: string): Promise<RawSnapshot> {
 export async function captureWorkspaceChanges(
   workspace: string,
   baseline?: RawSnapshot,
+  config: WorkspaceChangesConfig = resolveWorkspaceChangesConfig(undefined),
 ): Promise<{ snapshot: WorkspaceChangeSnapshot; raw: RawSnapshot }> {
-  const raw = await captureRaw(workspace);
+  const raw = await captureRaw(workspace, config);
   if (!raw.supported) {
     return {
       raw,
@@ -188,12 +208,12 @@ function isWithin(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
 }
 
-async function gitPatch(workspace: string, args: string[]): Promise<Buffer> {
+async function gitPatch(workspace: string, args: string[], timeoutMs: number): Promise<Buffer> {
   try {
     const { stdout } = await execFileAsync("git", args, {
       cwd: workspace,
       encoding: "buffer",
-      timeout: GIT_TIMEOUT_MS,
+      timeout: timeoutMs,
       maxBuffer: DIFF_MAX_BUFFER,
       windowsHide: true,
     });
@@ -210,9 +230,10 @@ async function gitPatch(workspace: string, args: string[]): Promise<Buffer> {
 export async function readWorkspaceFileDiff(
   workspace: string,
   requestedPath: string,
+  config: WorkspaceChangesConfig = resolveWorkspaceChangesConfig(undefined),
 ): Promise<WorkspaceFileDiff> {
   if (!requestedPath || requestedPath.includes("\0")) throw new Error("path is required");
-  const repoRoot = (await git(workspace, ["rev-parse", "--show-toplevel"])).trim();
+  const repoRoot = (await git(workspace, ["rev-parse", "--show-toplevel"], config.gitTimeoutMs)).trim();
   // macOS temp paths commonly enter through /var while Git canonicalizes to
   // /private/var. Compare canonical roots or valid in-workspace paths look
   // like escapes.
@@ -224,7 +245,7 @@ export async function readWorkspaceFileDiff(
     throw new Error("path is outside the session workspace");
   }
   const repoPath = relative(repoRoot, absolutePath).split(sep).join("/");
-  const status = await git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all", "--", repoPath]);
+  const status = await git(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all", "--", repoPath], config.gitTimeoutMs);
   if (!status.trim()) return { path: requestedPath, kind: "empty", patch: "", truncated: false, bytes: 0 };
 
   let output: Buffer;
@@ -233,14 +254,14 @@ export async function readWorkspaceFileDiff(
     if (info.isSymbolicLink()) {
       return { path: requestedPath, kind: "binary", patch: "", truncated: false, bytes: 0 };
     }
-    output = await gitPatch(repoRoot, ["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", absolutePath]);
+    output = await gitPatch(repoRoot, ["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", absolutePath], config.gitTimeoutMs);
   } else {
-    output = await gitPatch(repoRoot, ["diff", "HEAD", "--no-ext-diff", "--unified=3", "--", repoPath])
-      .catch(() => gitPatch(repoRoot, ["diff", "--cached", "--no-ext-diff", "--unified=3", "--", repoPath]));
+    output = await gitPatch(repoRoot, ["diff", "HEAD", "--no-ext-diff", "--unified=3", "--", repoPath], config.gitTimeoutMs)
+      .catch(() => gitPatch(repoRoot, ["diff", "--cached", "--no-ext-diff", "--unified=3", "--", repoPath], config.gitTimeoutMs));
   }
   const bytes = output.byteLength;
-  const truncated = bytes > DIFF_RETURN_BYTES;
-  const patch = output.subarray(0, DIFF_RETURN_BYTES).toString("utf8");
+  const truncated = bytes > config.diffMaxBytes;
+  const patch = output.subarray(0, config.diffMaxBytes).toString("utf8");
   const kind = /Binary files .* differ|GIT binary patch/.test(patch) ? "binary" : patch ? "text" : "empty";
   return { path: requestedPath, kind, patch, truncated, bytes };
 }
@@ -250,8 +271,25 @@ export const workspaceChangesPlugin: ForgePlugin = {
     id: "forge.workspace-changes",
     name: "Workspace Changes",
     version: "1.0.0",
+    description: "会话工作区的 Git 变更快照与逐文件 diff 审阅。",
     capabilities: ["event-subscriber", "read-action", "ui"],
     readActions: [{ id: "diff", description: "Read the current bounded Git diff for one workspace file" }],
+    configSchema: [
+      {
+        key: "gitTimeoutMs",
+        label: "Git 超时（毫秒）",
+        type: "number",
+        default: 4_000,
+        description: "单条 git 命令的最长等待时间，大仓库可适当调大。",
+      },
+      {
+        key: "diffMaxBytes",
+        label: "Diff 返回上限（字节）",
+        type: "number",
+        default: 256 * 1024,
+        description: "单个文件 diff 的最大返回体积，超出截断。",
+      },
+    ],
     ui: [{
       id: "workspace-changes",
       label: "变更",
@@ -260,8 +298,9 @@ export const workspaceChangesPlugin: ForgePlugin = {
       readAction: "diff",
     }],
   },
-  async activate(context) {
-    const { raw: baseline } = await captureWorkspaceChanges(context.session.workspace);
+  async activate(context, config) {
+    const limits = resolveWorkspaceChangesConfig(config);
+    const { raw: baseline } = await captureWorkspaceChanges(context.session.workspace, undefined, limits);
     let emittedBaseline = false;
     return {
       async onAgentEvent(event) {
@@ -276,7 +315,7 @@ export const workspaceChangesPlugin: ForgePlugin = {
           });
         }
         if (event.type === "agent_end") {
-          const { snapshot } = await captureWorkspaceChanges(context.session.workspace, baseline);
+          const { snapshot } = await captureWorkspaceChanges(context.session.workspace, baseline, limits);
           await context.emitEvent("WORKSPACE_CHANGES", { ...snapshot, phase: "current" });
         }
       },
@@ -286,6 +325,10 @@ export const workspaceChangesPlugin: ForgePlugin = {
     if (actionId !== "diff") throw new Error(`unknown workspace changes action: ${actionId}`);
     if (typeof input.path !== "string") throw new Error("path is required");
     if (context.signal.aborted) throw context.signal.reason;
-    return readWorkspaceFileDiff(context.session.workspace, input.path);
+    return readWorkspaceFileDiff(
+      context.session.workspace,
+      input.path,
+      resolveWorkspaceChangesConfig(context.config),
+    );
   },
 };

@@ -204,6 +204,32 @@ export interface WorkspaceChangesView {
   files: WorkspaceChangeView[];
 }
 
+export interface PluginConfigFieldView {
+  key: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "enum";
+  default: string | number | boolean;
+  options?: string[];
+  description?: string;
+}
+
+/** One entry of the global plugin manager catalog (GET /plugins). No session
+ * runtime semantics — see PluginCapabilitySnapshot for the per-session view. */
+export interface PluginCatalogEntryView {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  required: boolean;
+  capabilities: string[];
+  slashCommands?: Array<{ name: string; description: string }>;
+  ui?: Array<{ id: string; label: string; surface: string; renderer: string; readAction?: string }>;
+  readActions?: Array<{ id: string; description: string }>;
+  configSchema?: PluginConfigFieldView[];
+  userDisabled: boolean;
+  config: Record<string, unknown>;
+}
+
 export interface PluginCapabilitySnapshot {
   plugins: Array<{
     id: string;

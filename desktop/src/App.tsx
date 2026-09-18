@@ -6,6 +6,7 @@ import { Composer } from "./components/Composer.tsx";
 import { SessionView } from "./components/SessionView.tsx";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { SettingsPage } from "./components/SettingsPage.tsx";
+import { PluginsPage } from "./components/PluginsPage.tsx";
 
 declare global {
   interface Window {
@@ -55,6 +56,7 @@ export function App() {
   }, [settingsOpen, setSettingsOpen]);
 
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+  const pluginsOpen = store((s) => s.pluginsOpen);
   // A new session is created against the project the user picked in the
   // sidebar (store state), NOT the project of the currently-open session —
   // `activeSession.projectId` here was the old bug: switching projects in the
@@ -67,7 +69,9 @@ export function App() {
         className="app-main"
         style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}
       >
-        {activeSession ? (
+        {pluginsOpen ? (
+          <PluginsPage />
+        ) : activeSession ? (
           <SessionView
             key={activeSession.id}
             sessionId={activeSession.id}

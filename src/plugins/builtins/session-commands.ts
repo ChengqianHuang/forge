@@ -5,6 +5,7 @@ export const sessionCommandsPlugin: ForgePlugin = {
     id: "forge.session-commands",
     name: "Session commands",
     version: "1.0.0",
+    description: "会话内斜杠命令：/compact · /status · /context。",
     // Slash commands only — the results are shown by the kernel's notice
     // timeline, so declaring "ui" claimed a surface this plugin does not own.
     capabilities: ["slash-command"],

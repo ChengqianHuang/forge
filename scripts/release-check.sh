@@ -58,6 +58,7 @@ check "stop gate tests"       "cd $ROOT && node --import tsx --test src/guardrai
 check "approval-hub tests"    "cd $ROOT && node --import tsx --test src/server/approval-hub.test.ts"
 check "session lifecycle tests" "cd $ROOT && node --import tsx --test src/server/session-manager-lifecycle.test.ts"
 check "config-store tests"   "cd $ROOT && node --import tsx --test src/server/config-store.test.ts"
+check "plugin preference tests" "cd $ROOT && node --import tsx --test src/server/plugin-preferences.test.ts"
 check "model discovery tests" "cd $ROOT && node --import tsx --test src/server/model-discovery.test.ts"
 check "stuck-detector tests" "cd $ROOT && node --import tsx --test src/guardrails/stuck-detector.test.ts"
 check "usage tracker tests"     "cd $ROOT && node --import tsx --test src/guardrails/usage-tracker.test.ts"

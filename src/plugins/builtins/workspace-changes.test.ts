@@ -75,7 +75,7 @@ test("non-Git workspaces degrade without failing plugin activation", async () =>
       emitEvent: async (type, payload) => { emitted.push({ type, payload }); },
       enqueueSteering: () => {},
       requestCompaction: () => {},
-    });
+    }, {});
     await instance.onAgentEvent?.({ type: "agent_start" } as never);
     assert.equal(emitted[0]?.type, "WORKSPACE_CHANGES");
     assert.equal(emitted[0]?.payload.supported, false);

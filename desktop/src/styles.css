@@ -295,6 +295,7 @@ body.preview-hover .session-del { display: inline-flex; }
 }
 .side-bottom-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
 .side-icon-btn { padding: 6px; width: 28px; height: 28px; justify-content: center; }
+.side-bottom-active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 
 /* ==================== session ==================== */
 .session { flex: 1; min-height: 0; display: flex; flex-direction: column; }

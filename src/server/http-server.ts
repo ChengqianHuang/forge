@@ -187,6 +187,38 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
+      // --- Plugin manager (global) ---
+      if (req.method === "GET" && parts[0] === "plugins" && parts.length === 1) {
+        json(res, 200, { plugins: await manager.pluginCatalog() });
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "plugins" && parts[2] === "enabled" && parts.length === 3) {
+        const body = await readBody(req);
+        if (typeof body.enabled !== "boolean") {
+          json(res, 400, { error: "enabled must be boolean" });
+          return;
+        }
+        try {
+          json(res, 200, await manager.setGlobalPluginEnabled(parts[1]!, body.enabled));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /unknown plugin/i.test(message) ? 404 : 409, { error: message });
+        }
+        return;
+      }
+
+      if (req.method === "PUT" && parts[0] === "plugins" && parts[2] === "config" && parts.length === 3) {
+        const body = await readBody(req);
+        try {
+          json(res, 200, await manager.setGlobalPluginConfig(parts[1]!, body.config));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /unknown plugin/i.test(message) ? 404 : 400, { error: message });
+        }
+        return;
+      }
+
       // Mid-session model switch. Running: effective at the next turn
       // boundary; idle: persisted for the next resume.
       if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "model") {

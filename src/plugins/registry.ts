@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentTool } from "@earendil-works/pi-agent-core";
 import { multiplexHooks } from "./hook-multiplexer.ts";
+import { resolvePluginConfig, validateConfigSchema } from "./config-schema.ts";
 import type {
   ForgePlugin,
   PluginCapabilitySnapshot,
@@ -49,6 +50,15 @@ export class PluginRegistry {
   private readonly plugins = new Map<string, ForgePlugin>();
 
   constructor(private readonly timeoutMs = DEFAULT_PLUGIN_TIMEOUT_MS) {}
+
+  /** Same-file access for PluginHost's lazy mount path. */
+  plugin(id: string): ForgePlugin | undefined {
+    return this.plugins.get(id);
+  }
+
+  resolvePluginConfigFor(pluginId: string, stored: Record<string, unknown> | undefined): Record<string, unknown> {
+    return resolvePluginConfig(this.plugins.get(pluginId)?.manifest.configSchema, stored);
+  }
 
   register(plugin: ForgePlugin): void {
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(plugin.manifest.id)) {
@@ -104,6 +114,9 @@ export class PluginRegistry {
     if (!declared.has("read-action") && hasReadActions) {
       throw new Error(`plugin ${plugin.manifest.id} declares read actions without the "read-action" capability`);
     }
+    // A malformed schema must never reach the manager UI, which renders forms
+    // straight from it.
+    validateConfigSchema(plugin.manifest.configSchema, plugin.manifest.id);
     this.plugins.set(plugin.manifest.id, plugin);
   }
 
@@ -148,6 +161,9 @@ export class PluginRegistry {
     options?: {
       capabilities?: ReadonlySet<string>;
       disabledPluginIds?: ReadonlySet<string>;
+      /** Raw per-plugin user preferences; the registry resolves them against
+       * each plugin's schema and hands the merged result to activate(). */
+      config?: Readonly<Record<string, Record<string, unknown>>>;
     },
   ): Promise<PluginHost> {
     const instances = new Map<string, PluginInstance>();
@@ -167,6 +183,18 @@ export class PluginRegistry {
         manifest: plugin.manifest,
         status: initiallyDisabled ? "disabled" : "active",
       });
+      if (initiallyDisabled) {
+        // Disabled at activation means "not mounted": no activate(), no
+        // resource acquisition, no contributions. The host still records the
+        // state so capability projections show the plugin truthfully.
+        await context.emitEvent("PLUGIN_LOADED", {
+          pluginId: plugin.manifest.id,
+          version: plugin.manifest.version,
+          status: "disabled",
+          required: false,
+        });
+        continue;
+      }
       let instance: PluginInstance | undefined;
       let activationTimedOut = false;
       let activation: Promise<PluginInstance> | undefined;
@@ -176,7 +204,8 @@ export class PluginRegistry {
           ...context,
           signal: AbortSignal.any([context.signal, timeoutController.signal]),
         };
-        activation = Promise.resolve(plugin.activate(pluginContext));
+        const pluginConfig = resolvePluginConfig(plugin.manifest.configSchema, options?.config?.[plugin.manifest.id]);
+        activation = Promise.resolve(plugin.activate(pluginContext, pluginConfig));
         instance = await within(
           activation,
           this.timeoutMs,
@@ -270,7 +299,7 @@ export class PluginRegistry {
         });
       }
     }
-    return new PluginHost(context, instances, states, this.timeoutMs);
+    return new PluginHost(context, instances, states, this.timeoutMs, this, options?.config ?? {});
   }
 }
 
@@ -285,6 +314,8 @@ export class PluginHost {
     private readonly instances: Map<string, PluginInstance>,
     private readonly states: Map<string, PluginState>,
     private readonly timeoutMs = DEFAULT_PLUGIN_TIMEOUT_MS,
+    private readonly registry?: PluginRegistry,
+    private readonly userConfig: Readonly<Record<string, Record<string, unknown>>> = {},
   ) {
     for (const [id, state] of states) {
       if (state.status === "disabled") this.disabled.add(id);
@@ -424,8 +455,8 @@ export class PluginHost {
 
   async setEnabled(pluginId: string, enabled: boolean): Promise<void> {
     if (this.disposed) throw new Error("plugin host is disposed");
-    if (!this.instances.has(pluginId)) throw new Error(`plugin is not active in this session: ${pluginId}`);
-    const state = this.states.get(pluginId)!;
+    const state = this.states.get(pluginId);
+    if (!state) throw new Error(`plugin is not active in this session: ${pluginId}`);
     if (!enabled && state.manifest.required === true) {
       throw new Error(`plugin ${pluginId} is required and cannot be disabled`);
     }
@@ -433,6 +464,9 @@ export class PluginHost {
       if (this.failed.has(pluginId)) {
         throw new Error(`plugin ${pluginId} failed and cannot be re-enabled in this session`);
       }
+      // Disabled at activation means "not mounted" — mount it on demand so a
+      // user can restore an optional capability mid-session.
+      if (!this.instances.has(pluginId)) await this.mount(pluginId, state);
       if (!this.disabled.has(pluginId)) return;
       this.disabled.delete(pluginId);
       state.status = "active";
@@ -450,6 +484,61 @@ export class PluginHost {
         reason: "disabled by user",
       });
     }
+  }
+
+  /** Activate one plugin that was skipped at session activation. Contributions
+   * are conflict-checked against everything mounted so far; a failure here
+   * marks the plugin failed exactly like an activation-time failure. */
+  private async mount(pluginId: string, state: PluginState): Promise<void> {
+    const plugin = this.registry?.plugin(pluginId);
+    if (!plugin || !this.registry) throw new Error(`plugin is not active in this session: ${pluginId}`);
+    const config = this.registry.resolvePluginConfigFor(pluginId, this.userConfig[pluginId]);
+    const timeoutController = new AbortController();
+    const pluginContext = {
+      ...this.context,
+      signal: AbortSignal.any([this.context.signal, timeoutController.signal]),
+    };
+    let instance: PluginInstance;
+    try {
+      instance = await within(
+        Promise.resolve(plugin.activate(pluginContext, config)),
+        this.timeoutMs,
+        `${pluginId}.activate`,
+        () => timeoutController.abort(new Error(`${pluginId}.activate timed out`)),
+      );
+    } catch (error) {
+      await this.disable(pluginId, "activate", error);
+      throw error;
+    }
+    // Late conflict check: another plugin mounted meanwhile may own a name.
+    const owners = new Map<string, string>();
+    for (const [id, mounted] of this.instances) {
+      for (const command of mounted.slashCommands ?? []) owners.set(`cmd:${command.name}`, id);
+      for (const tool of mounted.tools ?? []) owners.set(`tool:${tool.name}`, id);
+    }
+    for (const command of instance.slashCommands ?? []) {
+      const owner = owners.get(`cmd:${command.name}`);
+      if (owner) {
+        await this.disposeInstance(pluginId, instance, "mount-conflict");
+        await this.disable(pluginId, "activate", new Error(`slash command /${command.name} conflicts with ${owner}`));
+        throw new Error(`slash command /${command.name} conflicts with ${owner}`);
+      }
+    }
+    for (const tool of instance.tools ?? []) {
+      const owner = owners.get(`tool:${tool.name}`);
+      if (owner) {
+        await this.disposeInstance(pluginId, instance, "mount-conflict");
+        await this.disable(pluginId, "activate", new Error(`tool ${tool.name} conflicts with ${owner}`));
+        throw new Error(`tool ${tool.name} conflicts with ${owner}`);
+      }
+    }
+    this.instances.set(pluginId, instance);
+    await this.context.emitEvent("PLUGIN_LOADED", {
+      pluginId,
+      version: state.manifest.version,
+      status: "active",
+      required: state.manifest.required === true,
+    }).catch(() => {});
   }
 
   private async disable(pluginId: string, phase: string, error: unknown): Promise<void> {

@@ -9,7 +9,7 @@ test("usage plugin owns token accounting and emits the UI projection", async () 
     session: { usage: { tokensIn: 5, tokensOut: 2, cacheRead: 0, cacheWrite: 0, lastContextTokens: 5 } },
     emitEvent: async (type: string, payload: Record<string, unknown>) => { events.push({ type, payload }); },
   } as PluginSessionContext;
-  const instance = await usagePlugin.activate(context);
+  const instance = await usagePlugin.activate(context, {});
   await instance.onAgentEvent?.({
     type: "message_end",
     message: {

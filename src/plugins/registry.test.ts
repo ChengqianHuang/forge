@@ -70,11 +70,12 @@ describe("PluginRegistry", () => {
     const result = await registry.read("test.reader", "inspect", { path: "a" }, {
       session: context([]).session,
       signal: new AbortController().signal,
+      config: {},
     });
     assert.deepEqual(result, { action: "inspect", input: { path: "a" } });
     assert.equal(activated, false);
     await assert.rejects(
-      () => registry.read("test.reader", "missing", {}, { session: context([]).session, signal: new AbortController().signal }),
+      () => registry.read("test.reader", "missing", {}, { session: context([]).session, signal: new AbortController().signal, config: {} }),
       /unknown read action/,
     );
   });
@@ -103,6 +104,7 @@ describe("PluginRegistry", () => {
       () => registry.read("test.slow-reader", "inspect", {}, {
         session: context([]).session,
         signal: new AbortController().signal,
+        config: {},
       }),
       /timed out/,
     );

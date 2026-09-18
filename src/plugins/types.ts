@@ -20,16 +20,32 @@ export type PluginCapability =
    */
   | "read-action";
 
+/** One parameter of a plugin's declared config schema (the DSH-style
+ * schemastery role, deliberately reduced to four wire-safe field types). */
+export interface PluginConfigField {
+  key: string;
+  label: string;
+  type: "string" | "number" | "boolean" | "enum";
+  default: string | number | boolean;
+  /** enum only; must be non-empty and contain the default. */
+  options?: string[];
+  description?: string;
+}
+
 export interface PluginManifest {
   id: string;
   name: string;
   version: string;
+  /** One-line user-visible purpose, shown by the plugin manager page. */
+  description?: string;
   /** Required capabilities are session substrate and cannot be paused. */
   required?: boolean;
   capabilities: PluginCapability[];
   slashCommands?: Array<{ name: string; description: string }>;
   ui?: PluginUiContribution[];
   readActions?: PluginReadActionDescriptor[];
+  /** Declared parameters; the manager UI renders forms straight from this. */
+  configSchema?: PluginConfigField[];
 }
 
 export interface PluginReadActionDescriptor {
@@ -50,6 +66,8 @@ export interface PluginUiContribution {
 export interface PluginReadContext {
   session: Session;
   signal: AbortSignal;
+  /** Resolved per-plugin config (schema defaults ← user preferences). */
+  config: Record<string, unknown>;
 }
 
 export interface PluginSessionContext {
@@ -94,7 +112,9 @@ export interface PluginInstance {
 
 export interface ForgePlugin {
   manifest: PluginManifest;
-  activate: (context: PluginSessionContext) => Promise<PluginInstance> | PluginInstance;
+  /** `config` is the plugin's resolved configuration: schema defaults merged
+   * with the user's persisted preferences, validated by the registry. */
+  activate: (context: PluginSessionContext, config: Record<string, unknown>) => Promise<PluginInstance> | PluginInstance;
   /** Stateless, user-initiated inspection available after runtime disposal. */
   read?: (
     actionId: string,
@@ -117,3 +137,16 @@ export interface PluginCapabilitySnapshot {
   slashCommands: Array<{ name: string; description: string; pluginId: string }>;
   uiContributions?: Array<PluginUiContribution & { pluginId: string }>;
 }
+
+/**
+ * Registration-time view for the global plugin manager page. Unlike
+ * PluginRuntimeDescriptor it carries no session runtime semantics — only the
+ * manifest, the user's global enablement preference, and the resolved config.
+ */
+export type PluginCatalogEntry = Omit<
+  PluginRuntimeDescriptor,
+  "status" | "failurePhase" | "failureReason"
+> & {
+  userDisabled: boolean;
+  config: Record<string, unknown>;
+};

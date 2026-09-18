@@ -64,8 +64,10 @@ import type {
 import { UsageTracker } from "../guardrails/usage-tracker.ts";
 import type { GuardrailConfig } from "../guardrails/types.ts";
 import type { PluginHost, PluginRegistry } from "../plugins/registry.ts";
-import type { PluginCapabilitySnapshot } from "../plugins/types.ts";
+import type { PluginCapabilitySnapshot, PluginCatalogEntry } from "../plugins/types.ts";
 import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
+import { resolvePluginConfig, validateConfigInput } from "../plugins/config-schema.ts";
+import { loadPluginPreferences, savePluginPreferences } from "./plugin-preferences.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 
 /**
@@ -461,13 +463,15 @@ export class SessionManager {
         ? appendEvent(sessionId, type, payload)
         : Promise.resolve(undefined);
     const disabledPluginIds = userDisabledPluginIds(await readEvents(sessionId));
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    for (const id of prefs.disabled) disabledPluginIds.add(id);
     const plugins = await this.plugins.activate({
       session,
       signal: controller.signal,
       emitEvent: (type, payload) => emitEvent(type as Parameters<typeof appendEvent>[1], payload),
       enqueueSteering: (message) => steeringQueue.push(message),
       requestCompaction: () => { compactionRequested = true; },
-    }, { disabledPluginIds });
+    }, { disabledPluginIds, config: prefs.config });
     // A missing/failed Usage plugin degrades to an inert tracker. The loop,
     // compaction's per-turn signal and all safety hooks continue to work.
     const usage = plugins.service<UsageTracker>("usage") ?? new UsageTracker();
@@ -597,6 +601,8 @@ export class SessionManager {
     if (!session) throw new Error(`session ${sessionId} not found`);
     const controller = new AbortController();
     const disabledPluginIds = userDisabledPluginIds(await readEvents(sessionId));
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    for (const id of prefs.disabled) disabledPluginIds.add(id);
     const host = await this.plugins.activate(
       {
         session,
@@ -609,7 +615,7 @@ export class SessionManager {
         enqueueSteering: () => {},
         requestCompaction: () => { throw new Error("/compact requires a running session"); },
       },
-      { capabilities: new Set(["slash-command"]), disabledPluginIds },
+      { capabilities: new Set(["slash-command"]), disabledPluginIds, config: prefs.config },
     );
     try {
       const result = await host.execute(commandLine);
@@ -624,6 +630,53 @@ export class SessionManager {
     if (!runtime) throw new Error("session is not running");
     await runtime.plugins.setEnabled(pluginId, enabled);
     return { ok: true };
+  }
+
+  /** Registration-time catalog for the global plugin manager page. */
+  async pluginCatalog(): Promise<PluginCatalogEntry[]> {
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    return this.plugins.capabilities().plugins.map((plugin) => {
+      const { status: _status, failurePhase: _phase, failureReason: _reason, ...manifest } = plugin;
+      return {
+        ...manifest,
+        userDisabled: prefs.disabled.includes(plugin.id),
+        config: resolvePluginConfig(plugin.configSchema, prefs.config[plugin.id]),
+      };
+    });
+  }
+
+  /** Global enablement preference, applied when a session next activates
+   * its plugins. Required plugins are session substrate and cannot be paused. */
+  async setGlobalPluginEnabled(pluginId: string, enabled: boolean): Promise<{ ok: boolean }> {
+    const plugin = this.plugins.capabilities().plugins.find((candidate) => candidate.id === pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    if (!enabled && plugin.required) {
+      throw new Error(`plugin ${pluginId} is required and cannot be disabled`);
+    }
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    const disabled = new Set(prefs.disabled);
+    if (enabled) disabled.delete(pluginId);
+    else disabled.add(pluginId);
+    await savePluginPreferences(this.opts.forgeHome, { ...prefs, disabled: [...disabled] });
+    return { ok: true };
+  }
+
+  /** Persist user config for a plugin after schema validation; returns the
+   * resolved values (defaults merged) so the UI can show what will apply. */
+  async setGlobalPluginConfig(
+    pluginId: string,
+    input: unknown,
+  ): Promise<{ config: Record<string, unknown> }> {
+    const plugin = this.plugins.capabilities().plugins.find((candidate) => candidate.id === pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    const validated = validateConfigInput(plugin.configSchema, input);
+    if (!validated.ok) throw new Error(validated.error);
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    await savePluginPreferences(this.opts.forgeHome, {
+      ...prefs,
+      config: { ...prefs.config, [pluginId]: validated.config },
+    });
+    return { config: resolvePluginConfig(plugin.configSchema, validated.config) };
   }
 
   async pluginCapabilities(sessionId: string): Promise<PluginCapabilitySnapshot> {
@@ -651,7 +704,15 @@ export class SessionManager {
       throw new Error(`plugin ${pluginId} is ${plugin.status} for this session`);
     }
     const controller = new AbortController();
-    return this.plugins.read(pluginId, actionId, input, { session, signal: controller.signal });
+    const prefs = await loadPluginPreferences(this.opts.forgeHome);
+    return this.plugins.read(pluginId, actionId, input, {
+      session,
+      signal: controller.signal,
+      config: resolvePluginConfig(
+        snapshot.plugins.find((candidate) => candidate.id === pluginId)?.configSchema,
+        prefs.config[pluginId],
+      ),
+    });
   }
 
   async abort(sessionId: string): Promise<{ ok: boolean; message: string }> {

@@ -21,7 +21,7 @@ test("MCP plugin discovers tools, preserves provenance and closes with the sessi
     close: async () => { closed = true; },
   };
   const plugin = createMcpPlugin({ id: "demo", client });
-  const instance = await plugin.activate({ signal: new AbortController().signal } as never);
+  const instance = await plugin.activate({ signal: new AbortController().signal } as never, {});
   const result = await instance.tools![0]!.execute("call-1", {}, new AbortController().signal);
   assert.deepEqual(result.details, { server: "demo", tool: "lookup", result: { name: "lookup", args: {} } });
   await instance.dispose?.();

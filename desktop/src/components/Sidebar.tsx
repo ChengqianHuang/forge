@@ -64,6 +64,8 @@ export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
   const theme = store((s) => s.theme);
   const toggleTheme = store((s) => s.toggleTheme);
   const openSettings = store((s) => s.setSettingsOpen);
+  const pluginsOpen = store((s) => s.pluginsOpen);
+  const setPluginsOpen = store((s) => s.setPluginsOpen);
   // Project state lives in the store, not here: a project switch must be
   // visible to the rest of the app (the Composer creates new sessions against
   // it) and must survive remounts.
@@ -167,6 +169,23 @@ export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
       <div className="side-bottom">
         <button className="side-bottom-btn" onClick={() => openSettings(true)}>
           <span>设置</span>
+        </button>
+        <button
+          className={`side-bottom-btn side-icon-btn ${pluginsOpen ? "side-bottom-active" : ""}`}
+          onClick={() => setPluginsOpen(!pluginsOpen)}
+          title="插件"
+          aria-label="插件"
+          aria-pressed={pluginsOpen}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M6.5 2.5a1.5 1.5 0 0 1 3 0V4H11a1 1 0 0 1 1 1v1.5h1.5a1.5 1.5 0 0 1 0 3H12V12a1 1 0 0 1-1 1H9.5v-1.5a1.5 1.5 0 0 0-3 0V13H5a1 1 0 0 1-1-1v-2.5H2.5a1.5 1.5 0 0 1 0-3H4V5a1 1 0 0 1 1-1h1.5V2.5Z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
         <button
           className="side-bottom-btn side-icon-btn"
