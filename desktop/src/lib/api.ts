@@ -10,6 +10,7 @@ import type {
   ThinkingLevel,
   PluginCapabilitySnapshot,
   PluginCatalogEntryView,
+  PluginSourceInfoView,
 } from "../types.ts";
 
 export type DesktopConfig = { baseUrl: string; token: string };
@@ -111,6 +112,26 @@ export async function fetchPlugins(): Promise<{
 
 export async function setGlobalPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
   await send(`/plugins/${encodeURIComponent(pluginId)}/enabled`, "POST", { enabled });
+}
+
+/** Inspect an install source (local path or git URL) without installing. */
+export async function inspectPluginSource(source: string): Promise<{
+  plugins: PluginSourceInfoView[];
+  errors: Array<{ source: string; reason: string }>;
+}> {
+  return send("/plugins/inspect", "POST", { source });
+}
+
+/** Install: copies plugin files into forge home and registers them live. */
+export async function installPlugin(source: string): Promise<{
+  plugins: PluginSourceInfoView[];
+  errors: Array<{ source: string; reason: string }>;
+}> {
+  return send("/plugins/install", "POST", { source });
+}
+
+export async function uninstallPlugin(pluginId: string): Promise<void> {
+  await send(`/plugins/${encodeURIComponent(pluginId)}/uninstall`, "POST");
 }
 
 /** Returns the resolved config (defaults merged) so the UI shows what will apply. */

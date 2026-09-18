@@ -232,6 +232,15 @@ export interface PluginCatalogEntryView {
   config: Record<string, unknown>;
 }
 
+/** One validated plugin offered by an install source (inspect result). */
+export interface PluginSourceInfoView {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  fileName: string;
+}
+
 export interface PluginCapabilitySnapshot {
   plugins: Array<{
     id: string;

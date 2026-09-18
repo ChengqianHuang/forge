@@ -24,18 +24,18 @@ export type ExternalPluginError = {
 };
 
 export type ExternalPluginLoad = {
-  plugins: ForgePlugin[];
+  plugins: Array<{ plugin: ForgePlugin; fileName: string }>;
   errors: ExternalPluginError[];
 };
 
-const EXTERNAL_PLUGIN_PATTERN = /\.plugin\.(ts|js|mjs)$/;
+export const EXTERNAL_PLUGIN_PATTERN = /\.plugin\.(ts|js|mjs)$/;
 const PLUGIN_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
 export function externalPluginsDir(forgeHome: string): string {
   return resolve(join(forgeHome, "plugins"));
 }
 
-function validateCandidate(value: unknown): ForgePlugin {
+export function validateCandidate(value: unknown): ForgePlugin {
   const plugin = value as ForgePlugin | undefined;
   if (!plugin || typeof plugin !== "object") {
     throw new Error("module default export is not a plugin object");
@@ -71,7 +71,7 @@ export async function loadExternalPlugins(forgeHome: string): Promise<ExternalPl
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return { plugins: [], errors: [] };
     return { plugins: [], errors: [{ source: "plugins/", reason: err instanceof Error ? err.message : String(err) }] };
   }
-  const plugins: ForgePlugin[] = [];
+  const plugins: Array<{ plugin: ForgePlugin; fileName: string }> = [];
   const errors: ExternalPluginError[] = [];
   const seen = new Set<string>();
   for (const name of entries) {
@@ -82,7 +82,7 @@ export async function loadExternalPlugins(forgeHome: string): Promise<ExternalPl
         throw new Error(`duplicate plugin id: ${plugin.manifest.id}`);
       }
       seen.add(plugin.manifest.id);
-      plugins.push(plugin);
+      plugins.push({ plugin, fileName: name });
     } catch (err) {
       errors.push({
         source: name,

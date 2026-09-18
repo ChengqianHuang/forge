@@ -13,6 +13,7 @@ import type { ThinkingLevel } from "../types.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 import { createMcpPlugin, McpStdioClient } from "../plugins/mcp.ts";
 import { loadExternalPlugins } from "./external-plugins.ts";
+import { inspectPluginSource } from "./plugin-install.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
 const THINKING_LEVEL_VALUES: ReadonlySet<string> = new Set([
@@ -51,10 +52,12 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
   // that fails to load is reported to the manager page, never fatal.
   const external = await loadExternalPlugins(opts.forgeHome);
   const externalPluginIds = new Set<string>();
-  for (const plugin of external.plugins) {
+  const externalFiles: Array<{ id: string; fileName: string }> = [];
+  for (const { plugin, fileName } of external.plugins) {
     try {
       plugins.register(plugin);
       externalPluginIds.add(plugin.manifest.id);
+      externalFiles.push({ id: plugin.manifest.id, fileName });
     } catch (err) {
       external.errors.push({
         source: plugin.manifest.id,
@@ -77,6 +80,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     approvalHub,
     plugins,
     externalPluginIds,
+    externalFiles,
     pluginLoadErrors: external.errors,
   });
   await manager.reconcileInterruptedSessions();
@@ -227,6 +231,44 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           json(res, /unknown plugin/i.test(message) ? 404 : 409, { error: message });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "plugins" && parts[1] === "inspect" && parts.length === 2) {
+        const body = await readBody(req);
+        if (typeof body.source !== "string" || !body.source) {
+          json(res, 400, { error: "source is required" });
+          return;
+        }
+        try {
+          json(res, 200, await inspectPluginSource(body.source));
+        } catch (err) {
+          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "plugins" && parts[1] === "install" && parts.length === 2) {
+        const body = await readBody(req);
+        if (typeof body.source !== "string" || !body.source) {
+          json(res, 400, { error: "source is required" });
+          return;
+        }
+        try {
+          json(res, 200, await manager.installExternalPlugin(body.source));
+        } catch (err) {
+          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "plugins" && parts[2] === "uninstall" && parts.length === 3) {
+        try {
+          json(res, 200, await manager.uninstallPlugin(parts[1]!));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /not external/i.test(message) ? 404 : 409, { error: message });
         }
         return;
       }

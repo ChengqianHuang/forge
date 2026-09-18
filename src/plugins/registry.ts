@@ -56,6 +56,15 @@ export class PluginRegistry {
     return this.plugins.get(id);
   }
 
+  /** Remove an external plugin from the catalog. Sessions that already
+   * activated it keep their live instance until disposal; the next activation
+   * no longer sees it. */
+  unregister(pluginId: string): void {
+    if (!this.plugins.delete(pluginId)) {
+      throw new Error(`plugin is not registered: ${pluginId}`);
+    }
+  }
+
   resolvePluginConfigFor(pluginId: string, stored: Record<string, unknown> | undefined): Record<string, unknown> {
     return resolvePluginConfig(this.plugins.get(pluginId)?.manifest.configSchema, stored);
   }

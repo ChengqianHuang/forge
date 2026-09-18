@@ -36,7 +36,8 @@ test("loads a valid external plugin and isolates broken ones", async () => {
     await writeFile(join(externalPluginsDir(home), "README.md"), "not a plugin", "utf8");
 
     const { plugins, errors } = await loadExternalPlugins(home);
-    assert.deepEqual(plugins.map((p) => p.manifest.id), ["ext.greet"]);
+    assert.deepEqual(plugins.map((p) => p.plugin.manifest.id), ["ext.greet"]);
+    assert.deepEqual(plugins.map((p) => p.fileName), ["greet.plugin.ts"]);
     assert.equal(errors.length, 2, JSON.stringify(errors));
     assert.ok(errors.some((e) => e.source === "bad-manifest.plugin.ts" && /manifest name is required/.test(e.reason)));
     assert.ok(errors.some((e) => e.source === "broken.plugin.ts"));

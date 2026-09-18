@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchPlugins, savePluginConfig, setGlobalPluginEnabled } from "../lib/api.ts";
-import type { PluginCatalogEntryView, PluginConfigFieldView } from "../types.ts";
+import {
+  fetchPlugins,
+  installPlugin,
+  inspectPluginSource,
+  savePluginConfig,
+  setGlobalPluginEnabled,
+  uninstallPlugin,
+} from "../lib/api.ts";
+import type { PluginCatalogEntryView, PluginConfigFieldView, PluginSourceInfoView } from "../types.ts";
 
 /** The global plugin manager page (DSH-form): one place to see every
  * registered plugin, toggle optional ones, and edit their declared config.
@@ -16,7 +23,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "read-action": "检查",
 };
 
-export function PluginsPage() {
+export function PluginsPage({ defaultWizardOpen = false }: { defaultWizardOpen?: boolean } = {}) {
+  const [wizardOpen, setWizardOpen] = useState(defaultWizardOpen);
   const [plugins, setPlugins] = useState<PluginCatalogEntryView[] | null>(null);
   const [externalErrors, setExternalErrors] = useState<Array<{ source: string; reason: string }>>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,12 +85,24 @@ export function PluginsPage() {
     setPlugins((current) => current ? current.map((p) => p.id === pluginId ? { ...p, config: resolved } : p) : current);
   }
 
+  async function uninstall(pluginId: string) {
+    setActionError(null);
+    try {
+      await uninstallPlugin(pluginId);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "20px 28px 40px" }}>
         <div style={headRow}>
           <span style={title}>插件</span>
           <span style={count}>{plugins ? `${plugins.length} 项` : ""}</span>
+          <span style={{ flex: 1 }} />
+          <button style={addBtn} onClick={() => setWizardOpen(true)}>添加插件</button>
         </div>
         <p style={subtitle}>
           扩展 Forge 的能力面：工具、命令、护栏检视与界面贡献都由插件提供。
@@ -138,13 +158,135 @@ export function PluginsPage() {
         {filtered && filtered.external.length > 0 && (
           <Group label="外部插件" note="~/.forge/plugins，启动时加载">
             {filtered.external.map((p) => (
-              <PluginCard key={p.id} plugin={p} busy={busyId === p.id} onToggle={toggle} onSaveConfig={saveConfig} />
+              <PluginCard
+                key={p.id}
+                plugin={p}
+                busy={busyId === p.id}
+                onToggle={toggle}
+                onSaveConfig={saveConfig}
+                onUninstall={uninstall}
+              />
             ))}
           </Group>
         )}
         {filtered && filtered.required.length === 0 && filtered.optional.length === 0 && filtered.external.length === 0 && (
           <div style={empty}>没有匹配的插件。</div>
         )}
+      </div>
+      {wizardOpen && (
+        <InstallWizard
+          onClose={() => setWizardOpen(false)}
+          onInstalled={() => {
+            setWizardOpen(false);
+            void load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function InstallWizard({ onClose, onInstalled }: {
+  onClose: () => void;
+  onInstalled: () => void;
+}) {
+  const [source, setSource] = useState("");
+  const [phase, setPhase] = useState<"input" | "checking" | "ready" | "installing" | "done" | "error">("input");
+  const [found, setFound] = useState<PluginSourceInfoView[]>([]);
+  const [errors, setErrors] = useState<Array<{ source: string; reason: string }>>([]);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function inspect() {
+    if (!source.trim() || phase === "checking") return;
+    setPhase("checking");
+    setMessage(null);
+    setFound([]);
+    setErrors([]);
+    try {
+      const result = await inspectPluginSource(source.trim());
+      setFound(result.plugins);
+      setErrors(result.errors);
+      setPhase("ready");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+      setPhase("error");
+    }
+  }
+
+  async function install() {
+    if (phase !== "ready" || found.length === 0) return;
+    setPhase("installing");
+    try {
+      const result = await installPlugin(source.trim());
+      setErrors(result.errors);
+      setPhase("done");
+      if (result.plugins.length > 0) onInstalled();
+      if (result.plugins.length === 0) {
+        // Nothing registered live; keep the wizard open with the errors shown.
+        setPhase("error");
+        setMessage("安装完成，但没有插件成功激活，详见下方错误。");
+        onInstalled();
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+      setPhase("error");
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: 520 }}>
+        <h3 className="modal-title">添加插件</h3>
+        <p className="modal-text">
+          支持本地 .plugin.ts 文件或目录，以及 https git 仓库地址（owner/repo 亦可）。
+          安装前会先检查模块的 manifest 合法性。
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            style={{ ...wizardInput, flex: 1 }}
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            placeholder="~/my-plugins/greet.plugin.ts 或 https://github.com/you/forge-plugin.git"
+            onKeyDown={(e) => e.key === "Enter" && void inspect()}
+            disabled={phase === "checking" || phase === "installing"}
+          />
+          <button className="btn btn-ghost btn-small" onClick={() => void inspect()} disabled={phase === "checking" || !source.trim()}>
+            {phase === "checking" ? "检查中…" : "检查"}
+          </button>
+        </div>
+
+        {found.length > 0 && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            {found.map((plugin) => (
+              <div key={plugin.id} style={foundCard}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <b style={{ fontSize: 13 }}>{plugin.name}</b>
+                  <span style={version}>{plugin.version}</span>
+                  <span style={version}>{plugin.fileName}</span>
+                </div>
+                {plugin.description && <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{plugin.description}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+        {errors.map((e) => (
+          <div key={e.source} style={{ ...errorNote, marginTop: 8 }}>
+            {e.source}: {e.reason}
+          </div>
+        ))}
+        {message && <div style={{ ...errorNote, marginTop: 8 }}>{message}</div>}
+        {phase === "done" && <div style={{ ...savedNote, marginTop: 8 }}>已安装，新会话立即可用。</div>}
+
+        <div className="modal-actions">
+          <button className="btn btn-ghost btn-small" onClick={onClose}>关闭</button>
+          <button
+            className="btn btn-primary btn-small"
+            onClick={() => void install()}
+            disabled={phase !== "ready" || found.length === 0}
+          >
+            {phase === "installing" ? "安装中…" : `安装${found.length > 0 ? `（${found.length} 个）` : ""}`}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -166,13 +308,15 @@ function Group({ label, note, children }: {
   );
 }
 
-function PluginCard({ plugin, busy, onToggle, onSaveConfig }: {
+function PluginCard({ plugin, busy, onToggle, onSaveConfig, onUninstall }: {
   plugin: PluginCatalogEntryView;
   busy: boolean;
   onToggle: (plugin: PluginCatalogEntryView) => Promise<void>;
   onSaveConfig: (pluginId: string, values: Record<string, unknown>) => Promise<unknown>;
+  onUninstall?: (pluginId: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const hasSchema = (plugin.configSchema?.length ?? 0) > 0;
   const enabled = !plugin.userDisabled;
 
@@ -199,6 +343,23 @@ function PluginCard({ plugin, busy, onToggle, onSaveConfig }: {
           </div>
           <ContributionLine plugin={plugin} />
         </div>
+        {plugin.source === "external" && onUninstall && (
+          <button
+            style={uninstallBtn}
+            onClick={() => {
+              if (confirming) {
+                setConfirming(false);
+                void onUninstall(plugin.id);
+              } else {
+                setConfirming(true);
+                setTimeout(() => setConfirming(false), 4000);
+              }
+            }}
+            title="删除插件文件并从目录移除"
+          >
+            {confirming ? "确认卸载？" : "卸载"}
+          </button>
+        )}
         <Switch
           checked={enabled}
           disabled={plugin.required || busy}
@@ -361,6 +522,10 @@ const headRow = { display: "flex", alignItems: "baseline", gap: 12 };
 const title = { fontSize: 17, fontWeight: 700, color: "var(--text)" };
 const count = { fontSize: 12, color: "var(--text-muted)" };
 const subtitle = { fontSize: 12.5, color: "var(--text-muted)", margin: "10px 0 16px", lineHeight: 1.5 };
+const addBtn = { padding: "5px 14px", borderRadius: 6, border: "1px solid var(--accent)", backgroundColor: "transparent", color: "var(--accent)", cursor: "pointer", fontSize: 12.5, fontWeight: 600 };
+const uninstallBtn = { padding: "3px 10px", borderRadius: 5, border: "1px solid var(--red)", backgroundColor: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 11.5, flexShrink: 0 };
+const wizardInput = { padding: "7px 10px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--bg-secondary)", color: "var(--text)", fontSize: 12.5, outline: "none" };
+const foundCard = { padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--bg-secondary)" };
 const search = { width: "100%", boxSizing: "border-box" as const, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", backgroundColor: "var(--bg-secondary)", color: "var(--text)", fontSize: 13, outline: "none" };
 const empty = { color: "var(--text-muted)", fontSize: 13, marginTop: 32, textAlign: "center" as const };
 const errorBox = { display: "flex", alignItems: "center", gap: 12, marginTop: 16, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--red)", color: "var(--red)", fontSize: 13, backgroundColor: "var(--bg-secondary)" };

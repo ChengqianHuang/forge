@@ -495,6 +495,16 @@ if (scene === "plugins") {
     if (url.endsWith("/plugins") && !init?.method) {
       return Promise.resolve(new Response(JSON.stringify(samplePlugins), { status: 200, headers: { "content-type": "application/json" } }));
     }
+    if (url.endsWith("/plugins/inspect") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({
+        plugins: [{
+          id: "ext.greet", name: "Greet", version: "1.2.0",
+          description: "外部示例插件：/greet 问候。",
+          fileName: "greet.plugin.ts",
+        }],
+        errors: [{ source: "scratch.plugin.ts", reason: "module default export is not a plugin object" }],
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
     return realFetch(input, init);
   };
 }
@@ -573,7 +583,7 @@ createRoot(document.getElementById("root")!).render(
   <>
     <Shell>
       {scene === "plugins" ? (
-        <PluginsPage />
+        <PluginsPage defaultWizardOpen={params.get("wizard") === "1"} />
       ) : scene === "landing" || scene === "settings" ? (
         <Composer projectId="p1" />
       ) : (

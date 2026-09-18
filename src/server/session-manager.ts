@@ -41,6 +41,7 @@ function delay(ms: number): Promise<void> {
 }
 import type { Model } from "@earendil-works/pi-ai";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runAgent } from "../agent-runner.ts";
 import { appendEvent, readEvents } from "../core/persistence/event-log.ts";
 import { replaySession } from "../core/persistence/replay.ts";
@@ -69,6 +70,8 @@ import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/sta
 import { resolvePluginConfig, validateConfigInput } from "../plugins/config-schema.ts";
 import { loadPluginPreferences, savePluginPreferences } from "./plugin-preferences.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
+import { externalPluginsDir, inspectPluginSource, installPluginFiles, cleanupStaging, type PluginSourceInfo } from "./plugin-install.ts";
+import { readdir, unlink } from "node:fs/promises";
 
 /**
  * Everything that exists only while one run of a session is live. Keeping it
@@ -156,7 +159,9 @@ export class SessionManager {
    */
   private runtimes = new Map<string, SessionRuntime>();
   private readonly plugins: PluginRegistry;
-  private readonly externalPluginIds: ReadonlySet<string>;
+  private readonly externalPluginIds: Set<string>;
+  /** pluginId → file name inside <forgeHome>/plugins, for uninstall. */
+  private readonly externalFiles = new Map<string, string>();
   private readonly pluginLoadErrors: ReadonlyArray<{ source: string; reason: string }>;
 
   constructor(
@@ -167,6 +172,8 @@ export class SessionManager {
       plugins?: PluginRegistry;
       /** Ids registered from `<forgeHome>/plugins` — marked "external" in the manager catalog. */
       externalPluginIds?: ReadonlySet<string>;
+      /** pluginId → file name inside <forgeHome>/plugins, so uninstall can remove the file. */
+      externalFiles?: ReadonlyArray<{ id: string; fileName: string }>;
       /** Per-file failures from the external plugin directory, surfaced verbatim. */
       pluginLoadErrors?: ReadonlyArray<{ source: string; reason: string }>;
       /** Test seam for lifecycle behavior; production uses the real Pi loop. */
@@ -174,7 +181,8 @@ export class SessionManager {
     },
   ) {
     this.plugins = opts.plugins ?? createBuiltinPluginRegistry();
-    this.externalPluginIds = opts.externalPluginIds ?? new Set();
+    this.externalPluginIds = new Set(opts.externalPluginIds ?? []);
+    for (const { id, fileName } of opts.externalFiles ?? []) this.externalFiles.set(id, fileName);
     this.pluginLoadErrors = opts.pluginLoadErrors ?? [];
   }
 
@@ -691,6 +699,60 @@ export class SessionManager {
       config: { ...prefs.config, [pluginId]: validated.config },
     });
     return { config: resolvePluginConfig(plugin.configSchema, validated.config) };
+  }
+
+  /** Install an external plugin from a local file/dir or a git URL: inspect
+   * the source, copy its plugin files into <forgeHome>/plugins, and register
+   * them into the live registry so the next session activation sees them —
+   * no restart needed. Failures are isolated per file. */
+  async installExternalPlugin(source: string): Promise<{
+    plugins: PluginSourceInfo[];
+    errors: Array<{ source: string; reason: string }>;
+  }> {
+    if (!source || typeof source !== "string") throw new Error("source is required");
+    // Reject file-name collisions up front: an install must never overwrite a
+    // plugin file the user (or another install) already put in place.
+    const existing = new Set(await readdir(externalPluginsDir(this.opts.forgeHome)).catch(() => []));
+    const inspected = await inspectPluginSource(source);
+    try {
+      for (const plugin of inspected.plugins) {
+        if (existing.has(plugin.fileName)) {
+          throw new Error(`a file named ${plugin.fileName} already exists in ${externalPluginsDir(this.opts.forgeHome)}`);
+        }
+      }
+      await installPluginFiles(this.opts.forgeHome, source, inspected.stagingDir, inspected.plugins);
+    } finally {
+      await cleanupStaging(inspected.stagingDir);
+    }
+    for (const info of inspected.plugins) {
+      // Re-import from its installed home: the registry holds the object whose
+      // provenance matches the file on disk, and register() re-checks ids.
+      try {
+        const mod = await import(pathToFileURL(join(externalPluginsDir(this.opts.forgeHome), info.fileName)).href);
+        const plugin = mod.default ?? mod.plugin;
+        this.plugins.register(plugin);
+        this.externalPluginIds.add(info.id);
+        this.externalFiles.set(info.id, info.fileName);
+      } catch (err) {
+        inspected.errors.push({
+          source: info.fileName,
+          reason: `installed, but live registration failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+    return { plugins: inspected.plugins, errors: inspected.errors };
+  }
+
+  /** Remove an external plugin: delete its file and drop it from the live
+   * registry. Running sessions keep their activated instance until disposal. */
+  async uninstallPlugin(pluginId: string): Promise<{ ok: boolean }> {
+    const fileName = this.externalFiles.get(pluginId);
+    if (!fileName) throw new Error(`plugin is not external (or not installed): ${pluginId}`);
+    await unlink(join(externalPluginsDir(this.opts.forgeHome), fileName));
+    this.plugins.unregister(pluginId);
+    this.externalPluginIds.delete(pluginId);
+    this.externalFiles.delete(pluginId);
+    return { ok: true };
   }
 
   async pluginCapabilities(sessionId: string): Promise<PluginCapabilitySnapshot> {

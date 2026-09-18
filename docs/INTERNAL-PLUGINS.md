@@ -243,3 +243,16 @@ Loading is fail-isolated per file: a syntax error, a malformed manifest, or an
 id collision is reported to the manager page's load-error banner and the
 server (and every other plugin) keeps working. The directory is read once per
 server start; changes apply on restart.
+
+### Install flow (添加插件 wizard)
+
+`POST /plugins/inspect {source}` validates a source without touching forge
+home; `POST /plugins/install {source}` copies the plugin files in and
+registers them into the live registry — the next session activation sees them
+without a restart. A source is a local `*.plugin.{ts,js,mjs}` file, a local
+directory of them, any git URL (including `file://`; shallow-cloned to a
+scratch dir), or the GitHub `owner/repo` shorthand. File-name collisions in
+the plugins directory are rejected — an install never overwrites an existing
+plugin file. `POST /plugins/:id/uninstall` deletes the file and drops the
+plugin from the live registry; sessions that already activated it keep their
+instance until disposal.

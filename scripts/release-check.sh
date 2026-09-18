@@ -60,6 +60,7 @@ check "session lifecycle tests" "cd $ROOT && node --import tsx --test src/server
 check "config-store tests"   "cd $ROOT && node --import tsx --test src/server/config-store.test.ts"
 check "plugin preference tests" "cd $ROOT && node --import tsx --test src/server/plugin-preferences.test.ts"
 check "external plugin tests" "cd $ROOT && node --import tsx --test src/server/external-plugins.test.ts"
+check "plugin install tests" "cd $ROOT && node --import tsx --test src/server/plugin-install.test.ts"
 check "model discovery tests" "cd $ROOT && node --import tsx --test src/server/model-discovery.test.ts"
 check "stuck-detector tests" "cd $ROOT && node --import tsx --test src/guardrails/stuck-detector.test.ts"
 check "usage tracker tests"     "cd $ROOT && node --import tsx --test src/guardrails/usage-tracker.test.ts"
