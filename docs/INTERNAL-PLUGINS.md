@@ -40,14 +40,21 @@ Registration is explicit in `src/plugins/builtins/index.ts`. TypeScript is the
 contract; internal modules do not need compatibility or deprecation machinery.
 
 `capabilities` is the set a host filters on when activating a plugin, while the
-manifest's `slashCommands` and `ui` arrays are projected to consumers *before*
-activation. The two must agree, so the registry rejects a manifest that declares
-`ui` with no UI contribution, contributes UI without declaring `ui`, or declares
-slash commands without the `slash-command` capability. Contributions that only
-exist after `activate()` (tools, hooks, event subscribers) cannot be checked
-statically — there, a declaration is a claim the author has to keep true.
-Declarations are user-visible, because the capability panel renders them: an
-over-declaration is a defect, not untidiness.
+manifest's `slashCommands`, `ui` and `readActions` arrays are projected to
+consumers *before* activation. The two must agree, so the registry rejects a
+manifest that declares `ui` with no UI contribution, contributes UI without
+declaring `ui`, declares `read-action` with no read action, contributes read
+actions without declaring `read-action`, or declares slash commands without the
+`slash-command` capability. Contributions that only exist after `activate()`
+(tools, hooks, event subscribers) cannot be checked statically — there, a
+declaration is a claim the author has to keep true. Declarations are
+user-visible, because the capability panel renders them: an over-declaration is
+a defect, not untidiness.
+
+The words are `tool`, `guardrail`, `event-subscriber`, `slash-command`,
+`read-action` and `ui`. `read-action` covers the stateless inspection surface
+(`readActions` + a `read` handler); without it, a plugin whose only contribution
+is inspection had nothing to declare and no host could select that surface.
 
 Every manifest is either required or optional. Required means “not user
 disableable”, not “incapable of failure”: Forge still reports and isolates a

@@ -11,7 +11,14 @@ export type PluginCapability =
   | "tool"
   | "guardrail"
   | "event-subscriber"
-  | "ui";
+  | "ui"
+  /**
+   * Stateless inspection surface: declared `readActions` plus a `read` handler.
+   * Without a word for it, a plugin whose only contribution is read actions had
+   * nothing to declare (its manifest read as "contributes nothing"), and a host
+   * could neither ask for nor filter to that surface.
+   */
+  | "read-action";
 
 export interface PluginManifest {
   id: string;

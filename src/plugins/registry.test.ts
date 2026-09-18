@@ -60,7 +60,7 @@ describe("PluginRegistry", () => {
         id: "test.reader",
         name: "reader",
         version: "1",
-        capabilities: ["ui"],
+        capabilities: ["read-action", "ui"],
         readActions: [{ id: "inspect", description: "inspect" }],
         ui: [{ id: "panel", label: "Panel", surface: "session-header", renderer: "test", readAction: "inspect" }],
       },
@@ -87,9 +87,8 @@ describe("PluginRegistry", () => {
         id: "test.slow-reader",
         name: "slow reader",
         version: "1",
-        // Read actions are not a declared capability kind (PluginCapability
-        // has no "read" word), and this plugin contributes no UI.
-        capabilities: [],
+        // Read actions only — no UI, no tools, no hooks.
+        capabilities: ["read-action"],
         readActions: [{ id: "inspect", description: "inspect" }],
       },
       activate: () => ({}),
@@ -131,7 +130,7 @@ describe("PluginRegistry", () => {
         id: "test.missing-reader",
         name: "missing reader",
         version: "1",
-        capabilities: [],
+        capabilities: ["read-action"],
         readActions: [{ id: "inspect", description: "inspect" }],
       },
       activate: () => ({}),
@@ -181,6 +180,31 @@ describe("PluginRegistry", () => {
       },
       activate: () => ({}),
     }), /contributes UI without declaring the "ui" capability/);
+  });
+
+  test("read actions and the \"read-action\" capability must agree", () => {
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.read-over-declared",
+        name: "read over",
+        version: "1",
+        capabilities: ["read-action"],
+      },
+      activate: () => ({}),
+    }), /declares capability "read-action" without any read action/);
+
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.read-under-declared",
+        name: "read under",
+        version: "1",
+        capabilities: ["tool"],
+        readActions: [{ id: "inspect", description: "inspect" }],
+      },
+      activate: () => ({}),
+      read: async () => ({}),
+    }), /declares read actions without the "read-action" capability/);
   });
 
   test("rejects duplicate plugin ids", () => {

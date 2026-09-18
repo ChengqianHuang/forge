@@ -84,9 +84,8 @@ export class PluginRegistry {
     // What cannot be checked statically: "tool", "guardrail" and
     // "event-subscriber" contributions exist only after `activate()`, and
     // "slash-command" is legitimately declared by plugins that contribute
-    // their commands at activation (the manifest array is optional). So this
-    // guard covers the UI surface in both directions plus one side of
-    // slash-command — not every capability word.
+    // their commands at activation (the manifest array is optional), so only
+    // the reverse direction is enforced there.
     const declared = new Set(plugin.manifest.capabilities);
     const hasUi = (plugin.manifest.ui?.length ?? 0) > 0;
     if (declared.has("ui") && !hasUi) {
@@ -97,6 +96,13 @@ export class PluginRegistry {
     }
     if ((plugin.manifest.slashCommands?.length ?? 0) > 0 && !declared.has("slash-command")) {
       throw new Error(`plugin ${plugin.manifest.id} declares slash commands without the "slash-command" capability`);
+    }
+    const hasReadActions = actionIds.size > 0;
+    if (declared.has("read-action") && !hasReadActions) {
+      throw new Error(`plugin ${plugin.manifest.id} declares capability "read-action" without any read action`);
+    }
+    if (!declared.has("read-action") && hasReadActions) {
+      throw new Error(`plugin ${plugin.manifest.id} declares read actions without the "read-action" capability`);
     }
     this.plugins.set(plugin.manifest.id, plugin);
   }

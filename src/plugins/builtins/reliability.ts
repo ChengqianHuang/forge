@@ -10,7 +10,7 @@ export const reliabilityPlugin: ForgePlugin = {
     name: "Harness Reliability",
     version: "1.0.0",
     required: true,
-    capabilities: ["ui"],
+    capabilities: ["read-action", "ui"],
     readActions: [{ id: "metrics", description: "Project harness reliability from the session event log" }],
     ui: [{
       id: "reliability",

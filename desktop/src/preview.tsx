@@ -472,8 +472,8 @@ createRoot(document.getElementById("root")!).render(
           { id: "forge.usage", name: "Usage meter", version: "1.0.0", capabilities: ["event-subscriber"], required: true, status: "active" },
           { id: "forge.capability-health", name: "Capability Health", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
           { id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
-          { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
-          { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "ui"], required: false, status: "failed" },
+          { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["read-action", "ui"], required: true, status: "active" },
+          { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "read-action", "ui"], required: false, status: "failed" },
         ]}
         states={store.getState().conversation.pluginStates}
         lifecycle={store.getState().conversation.pluginLifecycle}

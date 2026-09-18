@@ -250,7 +250,7 @@ export const workspaceChangesPlugin: ForgePlugin = {
     id: "forge.workspace-changes",
     name: "Workspace Changes",
     version: "1.0.0",
-    capabilities: ["event-subscriber", "ui"],
+    capabilities: ["event-subscriber", "read-action", "ui"],
     readActions: [{ id: "diff", description: "Read the current bounded Git diff for one workspace file" }],
     ui: [{
       id: "workspace-changes",
