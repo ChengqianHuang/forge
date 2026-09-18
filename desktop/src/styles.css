@@ -877,3 +877,8 @@ body.preview-hover .session-del { display: inline-flex; }
 .dock-changes .changes-body { display: flex; flex-direction: column; overflow-y: auto; }
 .dock-changes .change-list { max-height: 38%; overflow-y: auto; border-bottom: 1px solid var(--border); }
 .dock-changes .diff-view { flex: 1; min-height: 120px; overflow-y: auto; }
+
+/* Narrowed by the dock, markdown code blocks scroll horizontally instead of
+   clipping mid-token. */
+.md pre { overflow-x: auto; }
+.md code { overflow-wrap: anywhere; }
