@@ -188,8 +188,8 @@ cost budget was removed — price estimation was blind for custom endpoints
 and no UI path ever set a budget, so the breaker never fired).
 
 `UsageTracker` accumulates per-session token counters and keeps the context
-watermark (`lastContextTokens`); `prepareNextTurn` reads the watermark to
-trigger compaction. Spend limits belong to the provider. There is no
+watermark (`lastContextTokens`); `prepareNextTurn` reads the watermark — and the
+transcript's own estimate — to trigger compaction. Spend limits belong to the provider. There is no
 client-side budget of any kind (the turn budget was retired 2026-09-12 — like
 the cost budget, it had no UI entry and therefore never fired): what bounds a
 run is the stuck guard, the model's own completion, and the user's Stop.
@@ -213,8 +213,13 @@ the Claude-Code-style prompt-cache strategy below was aspirational and is NOT
 implemented; do not re-add it to this document until it ships).
 
 Context is bounded by exactly one mechanism: Pi's compaction via
-`prepareNextTurn`, triggered on provider-reported per-turn usage against
-`min(120K, modelWindow − 16K)`. The kernel installs no `transformContext`
+`prepareNextTurn`, triggered on **either** provider-reported per-turn usage
+**or** the transcript's own script-aware estimate, against
+`min(120K, modelWindow − 16K)`. Two signals, because usage describes the
+*outgoing request* — which a plugin's `transformContext` may legitimately shrink,
+and extensions are free to do that — and is simply absent on endpoints that
+never report it. The estimate is the floor the kernel's promise stands on.
+The kernel installs no `transformContext`
 (removed 2026-09-18): a per-request transform rewrote the outgoing prompt
 without touching the transcript, so the live context and the recorded one could
 disagree — and because the provider then reported the *truncated* size, it also

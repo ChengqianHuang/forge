@@ -72,6 +72,67 @@ function toVirtualEntries(messages: AgentMessage[]): Entry[] {
 }
 
 /**
+ * Script-aware token estimate for a whole transcript.
+ *
+ * This exists because the accurate signal (provider-reported usage) cannot be
+ * the only one. Usage describes the *outgoing request*, which a plugin's
+ * `transformContext` may legitimately shrink, and plenty of OpenAI-compatible
+ * endpoints report no usage at all. In either case the kernel's own promise —
+ * compact before the window fills — would silently depend on someone else's
+ * behavior. Summing the loop's own messages cannot be depressed by either, so
+ * it is the floor the promise stands on.
+ *
+ * CJK counts ~1 token per character, everything else ~4 chars per token. One
+ * global chars/4 factor under-counts Chinese by roughly 4x, which would make
+ * this floor useless for exactly the sessions that need it.
+ */
+export function estimateTranscriptTokens(messages: readonly AgentMessage[]): number {
+  let cjk = 0;
+  let other = 0;
+  for (const message of messages) {
+    for (const char of messageText(message)) {
+      const code = char.codePointAt(0) ?? 0;
+      if (isCjk(code)) cjk += 1;
+      else other += 1;
+    }
+  }
+  return cjk + Math.ceil(other / 4);
+}
+
+/** Textual payload of a message: plain-string content or its text blocks. */
+function messageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  let text = "";
+  for (const block of content) {
+    if (block && typeof block === "object" && (block as { type?: unknown }).type === "text") {
+      const value = (block as { text?: unknown }).text;
+      if (typeof value === "string") text += value;
+    }
+  }
+  return text;
+}
+
+const CJK_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x2e80, 0x2eff], // CJK radicals
+  [0x3000, 0x303f], // CJK punctuation
+  [0x3040, 0x30ff], // kana
+  [0x3400, 0x4dbf], // CJK extension A
+  [0x4e00, 0x9fff], // CJK unified ideographs
+  [0xac00, 0xd7af], // hangul syllables
+  [0xf900, 0xfaff], // CJK compatibility ideographs
+  [0xff00, 0xffef], // fullwidth forms
+];
+
+function isCjk(code: number): boolean {
+  for (const [from, to] of CJK_RANGES) {
+    if (code >= from && code <= to) return true;
+  }
+  return false;
+}
+
+/**
  * Build the `prepareNextTurn` hook.
  *
  * Contract (per Pi's `AgentLoopConfig.prepareNextTurn`):
@@ -88,10 +149,14 @@ function toVirtualEntries(messages: AgentMessage[]): Entry[] {
  *   - Read the completed turn's own provider-reported usage
  *     (`calculateContextTokens`), falling back to the persisted watermark
  *     (`usage.getLastContextTokens()`). Both are the same provider-side signal.
- *   - Compact when it exceeds `min(cap, window - RESERVE_TOKENS)`. The window
- *     always clamps, including an explicitly configured cap: a trigger above
- *     the model's real window would fire after the failure it exists to
- *     prevent. Unknown window → the cap alone applies.
+ *   - Compact when it exceeds `min(cap, window - RESERVE_TOKENS)`, **or** when
+ *     the transcript's own script-aware estimate exceeds it. Two signals
+ *     because either one can be unavailable: usage is per-request (so a
+ *     plugin's view transform can shrink it) and is simply absent on endpoints
+ *     that do not report it. The estimate is the floor. The window always
+ *     clamps, including an explicitly configured cap: a trigger above the
+ *     model's real window would fire after the failure it exists to prevent.
+ *     Unknown window → the cap alone applies.
  *
  * Compaction modes:
  *   - **LLM-summary** (when `opts.compact` is provided): Pi's cut-point
@@ -198,11 +263,24 @@ export function makePrepareNextTurn(opts: {
     }
 
     const forced = opts.takeCompactionRequest?.() ?? false;
-    if (!forced && (lastInput === null || lastInput <= threshold)) {
-      return undefined; // Below threshold — no compaction.
-    }
-
+    // Two signals, either one is enough. Usage is the accurate provider-side
+    // number; the transcript estimate is the floor that neither a view
+    // transform (a plugin may legitimately shrink the request) nor a silent
+    // endpoint (usage omitted) can depress. The kernel's promise — compact
+    // before the window fills — must not depend on either going well.
     const messages = ctx.context.messages;
+    const transcriptTokens = estimateTranscriptTokens(messages);
+    const overByUsage = lastInput !== null && lastInput > threshold;
+    const overByEstimate = transcriptTokens > threshold;
+    if (!forced && !overByUsage && !overByEstimate) {
+      return undefined; // Below threshold on both signals — no compaction.
+    }
+    const trigger: "usage" | "estimate" = overByUsage ? "usage" : "estimate";
+    if (debug) {
+      console.error(
+        `[compaction] compacting: trigger=${trigger} lastInput=${lastInput} transcriptEstimate=${transcriptTokens} threshold=${threshold} messages=${messages.length}`,
+      );
+    }
 
     // --- LLM-summary path ---
     // Note: keepRecentMessages bounds TRUNCATION only. Summary mode is
@@ -277,6 +355,8 @@ export function makePrepareNextTurn(opts: {
               .emitEvent("COMPACTION", {
             mode: "llm-summary",
             forced,
+            trigger,
+            transcriptTokens,
                 beforeCount: messages.length,
                 afterCount: newMessages.length,
                 droppedCount: messages.length - newMessages.length,
@@ -314,6 +394,8 @@ export function makePrepareNextTurn(opts: {
       .emitEvent("COMPACTION", {
       mode: "truncate",
       forced,
+      trigger,
+      transcriptTokens,
         beforeCount: messages.length,
         afterCount: keptMessages.length,
         droppedCount,

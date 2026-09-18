@@ -107,9 +107,13 @@ cannot leave a partially imported transcript that looks complete.
 ## Context management
 
 Pi compaction in `prepareNextTurn` is the only mechanism that changes what the
-model sees. Provider-reported per-turn usage decides when: it compacts above
-`min(120K, modelWindow − 16K)` — the window always clamps, so a narrow model
-compacts early instead of dying at its own limit. The kernel installs no
+model sees. It compacts above `min(120K, modelWindow − 16K)` when **either**
+provider-reported per-turn usage crosses that line **or** the transcript's own
+script-aware estimate does. Two signals on purpose: usage describes the outgoing
+request, which an extension's view transform may legitimately shrink, and is
+absent on endpoints that never report it — neither can be allowed to leave a run
+uncompacted until it dies at the window. The window always clamps, so a narrow
+model compacts early instead of dying at its own limit. The kernel installs no
 `transformContext` (removed 2026-09-18): a per-request transform truncated the
 outgoing prompt without leaving a record, which diverged from the transcript
 *and* — because the provider then reported the truncated size — held this

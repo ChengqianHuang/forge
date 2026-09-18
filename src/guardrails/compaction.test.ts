@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import {
   makePrepareNextTurn,
+  estimateTranscriptTokens,
   DEFAULT_COMPACTION_THRESHOLD,
   DEFAULT_KEEP_RECENT_MESSAGES,
 } from "./compaction.ts";
@@ -376,5 +377,109 @@ describe("makePrepareNextTurn (window-derived trigger)", () => {
     });
     assert.equal(await prepare(makeCtx(many(), 110_000)), undefined);
     assert.ok(await prepare(makeCtx(many(), 130_000)));
+  });
+});
+
+describe("estimateTranscriptTokens", () => {
+  test("CJK ~1 token per char, ASCII ~4 chars per token", () => {
+    assert.equal(estimateTranscriptTokens([userMsg("中".repeat(1_000))]), 1_000);
+    assert.equal(estimateTranscriptTokens([userMsg("a".repeat(4_000))]), 1_000);
+    assert.equal(estimateTranscriptTokens([userMsg("")]), 0);
+    assert.equal(estimateTranscriptTokens([]), 0);
+  });
+
+  test("mixed text lands between the two rates", () => {
+    assert.equal(estimateTranscriptTokens([userMsg("中".repeat(500) + "a".repeat(2_000))]), 1_000);
+  });
+
+  test("counts text blocks, ignores non-text payloads", () => {
+    const message = {
+      role: "toolResult",
+      content: [
+        { type: "text", text: "中".repeat(10) },
+        { type: "image", data: "x".repeat(9_999) },
+      ],
+      timestamp: 0,
+    } as unknown as AgentMessage;
+    assert.equal(estimateTranscriptTokens([message]), 10);
+  });
+});
+
+describe("makePrepareNextTurn (extension-independent floor)", () => {
+  const recorder = () => {
+    const events = capturedEvents();
+    return { events, emitEvent: (type: string, payload: Record<string, unknown>) => {
+      events.push({ type, payload });
+      return Promise.resolve();
+    } };
+  };
+  // A transcript far over the threshold, with the bulk in Chinese — the case a
+  // single chars/4 factor would miss entirely.
+  const bigTranscript = () => [
+    userMsg("中".repeat(130_000)),
+    ...Array.from({ length: 9 }, (_, i) => userMsg(`m${i}`)),
+  ];
+
+  test("compacts on the transcript estimate when the provider reports no usage", async () => {
+    // Some OpenAI-compatible endpoints omit usage entirely, so the only signal
+    // left is the transcript itself. (makeCtx(messages, 0) models that: no
+    // usable turn usage and an empty tracker.)
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "no-usage",
+      usage: new UsageTracker(),
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    const out = await prepare(makeCtx(bigTranscript(), 0));
+    assert.ok(out, "the transcript alone must be enough to trigger");
+    const compaction = events.find((e) => e.type === "COMPACTION")!;
+    assert.equal(compaction.payload.trigger, "estimate");
+    assert.ok((compaction.payload.transcriptTokens as number) > 120_000);
+  });
+
+  test("a request shrunk by a view transform cannot hide a grown transcript", async () => {
+    // A plugin is free to prune every request (Pi documents this as the hook's
+    // first use). The provider then reports the pruned size while the loop's
+    // own transcript keeps growing — so the usage signal alone would never
+    // fire and the run would die at the window instead of compacting.
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "shrunk-request",
+      usage: new UsageTracker(),
+      thresholdTokens: 120_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    const out = await prepare(makeCtx(bigTranscript(), 5_000));
+    assert.ok(out, "the transcript floor must win over a shrunk request");
+    assert.equal(events.find((e) => e.type === "COMPACTION")!.payload.trigger, "estimate");
+  });
+
+  test("provider usage alone still triggers, and is reported as the cause", async () => {
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "usage-first",
+      usage: new UsageTracker(),
+      thresholdTokens: 120_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    const out = await prepare(makeCtx(Array.from({ length: 10 }, (_, i) => userMsg(`m${i}`)), 130_000));
+    assert.ok(out);
+    assert.equal(events.find((e) => e.type === "COMPACTION")!.payload.trigger, "usage");
+  });
+
+  test("both signals below the threshold → nothing happens", async () => {
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "quiet",
+      usage: new UsageTracker(),
+      thresholdTokens: 120_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.equal(await prepare(makeCtx(Array.from({ length: 10 }, (_, i) => userMsg(`m${i}`)), 100_000)), undefined);
+    assert.equal(events.length, 0);
   });
 });
