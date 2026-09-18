@@ -346,7 +346,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-root">
       <Sidebar onNewSession={() => {}} />
-      <main className="app-main" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      <main className="app-main">
         {children}
       </main>
       {scene === "settings" && <SettingsPage onClose={() => {}} />}

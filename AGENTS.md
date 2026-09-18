@@ -378,6 +378,17 @@ Which levels a subscription actually supports comes from Pi's
 catalog entry first (`{ ...catalog, ... }`) — rebuilding the object by hand
 drops `thinkingLevelMap`/`compat`, and the adapter then cannot translate levels.
 
+**UI coding standard (2026-09-19, established from the quality bar of the
+session-inspection surfaces):** visual and theme styling lives in
+`styles.css` as semantic classes — no inline `style={{}}` for colors, borders,
+typography or state; state is expressed with `data-*` attributes
+(`data-status`, `data-on`, `data-confirming`) and selected in CSS. Inline
+styles are reserved for genuinely dynamic values (a dragged width, a dynamic
+color mapping). Every surface renders designed empty/loading/error states —
+a bare error string is not an error state. Microcopy states what the surface
+does **not** claim, the same honesty the guardrails have ("不归因给
+Agent", "配置下次激活时生效", "运行中的会话保留到释放").
+
 The transcript is **one ordered timeline**, not parallel message/tool arrays.
 
 The server streams a strictly ordered event log (`MESSAGE_STARTED` → `TEXT_DELTA`* →

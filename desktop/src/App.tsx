@@ -63,10 +63,7 @@ export function App() {
   return (
     <div className="app-root">
       <Sidebar onNewSession={() => store.getState().select(null)} />
-      <main
-        className="app-main"
-        style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}
-      >
+      <main className="app-main">
         {pluginsOpen ? (
           <PluginsPage />
         ) : activeSession ? (
