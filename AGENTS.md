@@ -96,7 +96,7 @@ Forge guardrails are Pi AgentLoopConfig callbacks, not an outer loop.
 
 Bad: Forge runs its own `while not done` loop around Pi.
 
-Good: Forge assembles `AgentLoopConfig` with the six guardrail hooks — `beforeToolCall` / `afterToolCall` / `shouldStopAfterTurn` / `getSteeringMessages` (steering drain) / `transformContext` (context guard) / `prepareNextTurn` (compaction + mid-session switch drain) — and calls `agentLoop()`.
+Good: Forge assembles `AgentLoopConfig` with the five kernel guardrail hooks — `beforeToolCall` / `afterToolCall` / `shouldStopAfterTurn` / `getSteeringMessages` (steering drain) / `prepareNextTurn` (compaction + mid-session switch drain) — and calls `agentLoop()`. (`transformContext` is deliberately not among them — see "Context is bounded" below.)
 
 ### Rule 4.2
 
@@ -212,9 +212,15 @@ Context is bounded, not cache-engineered (2026-09-11: honest scope statement —
 the Claude-Code-style prompt-cache strategy below was aspirational and is NOT
 implemented; do not re-add it to this document until it ships).
 
-`transformContext` is a coarse last-resort guard: character-derived token
-estimate with a blunt LastN truncation past the soft window. Primary context
-management is Pi's compaction via `prepareNextTurn` (real per-turn usage data).
+Context is bounded by exactly one mechanism: Pi's compaction via
+`prepareNextTurn`, triggered on provider-reported per-turn usage against
+`min(120K, modelWindow − 16K)`. The kernel installs no `transformContext`
+(removed 2026-09-18): a per-request transform rewrote the outgoing prompt
+without touching the transcript, so the live context and the recorded one could
+disagree — and because the provider then reported the *truncated* size, it also
+held the compaction trigger below its own threshold. Multi-tier context
+handling is normal (Claude Code, Cline); a tier that leaves no record is not.
+A plugin may still contribute `transformContext`; the kernel does not.
 Mid-session model/thinking switches drain in `prepareNextTurn` BEFORE the
 compaction threshold early-return, so switching works regardless of context size.
 

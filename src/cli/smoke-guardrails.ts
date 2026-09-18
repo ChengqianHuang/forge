@@ -27,7 +27,6 @@ import { appendEvent } from "../core/persistence/event-log.ts";
 import { UsageTracker } from "../guardrails/usage-tracker.ts";
 import { makeBeforeToolCall } from "../guardrails/before-tool-call.ts";
 import { makeAfterToolCall } from "../guardrails/after-tool-call.ts";
-import { makeTransformContext } from "../guardrails/transform-context.ts";
 import type { GuardrailConfig } from "../guardrails/types.ts";
 import type { Session } from "../types.ts";
 
@@ -155,7 +154,6 @@ async function main(): Promise<void> {
     convertToLlm: (messages: AgentMessage[]) => messages,
     beforeToolCall: makeBeforeToolCall(guardrails),
     afterToolCall: makeAfterToolCall(guardrails),
-    transformContext: makeTransformContext(),
   };
 
   let sawErrorToolResult = false;

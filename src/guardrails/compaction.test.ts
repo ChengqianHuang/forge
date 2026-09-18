@@ -282,3 +282,99 @@ describe("makePrepareNextTurn (llm-summary compaction)", () => {
     ]);
   });
 });
+
+describe("makePrepareNextTurn (window-derived trigger)", () => {
+  const recorder = () => {
+    const events = capturedEvents();
+    return { events, emitEvent: (type: string, payload: Record<string, unknown>) => {
+      events.push({ type, payload });
+      return Promise.resolve();
+    } };
+  };
+  const many = (n = 10) => Array.from({ length: n }, (_, i) => userMsg(`m${i}`));
+
+  test("a narrow-window model compacts at window − reserve, far below the 120K cap", async () => {
+    // The bug: the cap was applied blindly, so a 32K-window model (threshold
+    // 16K) never compacted before its provider refused the request.
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "narrow",
+      usage: new UsageTracker(),
+      contextWindow: 32_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.equal(await prepare(makeCtx(many(), 12_000)), undefined, "below 32K − 16K");
+    assert.equal(events.length, 0);
+    assert.ok(await prepare(makeCtx(many(), 20_000)), "above 32K − 16K → compact");
+    assert.equal(events.filter((e) => e.type === "COMPACTION").length, 1);
+  });
+
+  test("a wide-window model keeps the conservative cap (summarizer headroom)", async () => {
+    // 200K − 16K = 183.6K, so the 120K cap still binds: behavior unchanged for
+    // the models Forge was tuned on.
+    const { events, emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "wide",
+      usage: new UsageTracker(),
+      contextWindow: 200_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.equal(await prepare(makeCtx(many(), 110_000)), undefined);
+    assert.ok(await prepare(makeCtx(many(), 130_000)));
+    assert.equal(events.filter((e) => e.type === "COMPACTION").length, 1);
+  });
+
+  test("the window clamps an explicitly configured cap", async () => {
+    const { emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "clamped",
+      usage: new UsageTracker(),
+      thresholdTokens: 500_000,
+      contextWindow: 32_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.ok(await prepare(makeCtx(many(), 20_000)), "a cap wider than the window cannot win");
+  });
+
+  test("a configured cap below the window-derived limit still wins", async () => {
+    const { emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "eager",
+      usage: new UsageTracker(),
+      thresholdTokens: 10_000,
+      contextWindow: 200_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.ok(await prepare(makeCtx(many(), 12_000)), "the smaller of the two applies");
+  });
+
+  test("an 8K window does not let the reserve swallow the trigger", async () => {
+    // 8K − 16K would be negative; the 25% floor puts the limit at 2K instead.
+    const { emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "tiny",
+      usage: new UsageTracker(),
+      contextWindow: 8_000,
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.equal(await prepare(makeCtx(many(), 1_500)), undefined);
+    assert.ok(await prepare(makeCtx(many(), 2_500)));
+  });
+
+  test("an unknown window falls back to the cap", async () => {
+    const { emitEvent } = recorder();
+    const prepare = makePrepareNextTurn({
+      sessionId: "unknown",
+      usage: new UsageTracker(),
+      keepRecentMessages: 3,
+      emitEvent,
+    });
+    assert.equal(await prepare(makeCtx(many(), 110_000)), undefined);
+    assert.ok(await prepare(makeCtx(many(), 130_000)));
+  });
+});

@@ -14,8 +14,11 @@ Forge composes these `AgentLoopConfig` callbacks:
 | `afterToolCall` | Record action/observation history and detect repetition |
 | `shouldStopAfterTurn` | Stuck termination and bounded transparent recovery |
 | `getSteeringMessages` | Drain user guidance at a turn boundary |
-| `transformContext` | Coarse emergency context bound |
 | `prepareNextTurn` | Model/thinking switches and Pi compaction |
+
+`transformContext` is not a kernel hook: the kernel ships no mechanism that
+rewrites the outgoing prompt without persisting the result (see ARCHITECTURE.md
+→ Context management). A plugin may contribute one.
 
 Core safety hooks run before internal plugin hooks. A core denial or termination
 cannot be relaxed by a plugin contribution.

@@ -18,12 +18,24 @@ import type { Model, Usage } from "@earendil-works/pi-ai";
 import type { UsageTracker } from "./usage-tracker.ts";
 
 /**
- * Default thresholds. 120K input tokens is 60% of a 200K context window —
- * leaves room for Pi's own summarization pass to assemble the summary plus
- * the kept recent messages without overshooting the model's window.
+ * Default trigger cap. The actual trigger is `min(cap, window - reserveTokens)`,
+ * so this number only binds on models wide enough for it to mean something:
+ * 120K is 60% of a 200K window, which leaves the summarization pass room to
+ * assemble the summary plus the retained tail. A narrower model gets an
+ * earlier, window-derived threshold instead — until 2026-09-18 the number was
+ * applied blindly, so a 32K-window model could never compact at all (120K is
+ * wider than its window) and simply died at the provider's limit.
  */
 export const DEFAULT_COMPACTION_THRESHOLD = 120_000;
 export const DEFAULT_KEEP_RECENT_MESSAGES = 20;
+
+/**
+ * Tokens held back for the summary request itself. Pi's
+ * DEFAULT_COMPACTION_SETTINGS uses the same number for the same reason: the
+ * summarizer is handed the old transcript, so the trigger must leave room for
+ * that request to fit inside the window.
+ */
+const RESERVE_TOKENS = 16_384;
 
 /**
  * Optional LLM-summary runtime. When provided, compaction calls Pi's
@@ -73,9 +85,13 @@ function toVirtualEntries(messages: AgentMessage[]): Entry[] {
  * Trigger policy:
  *   - Pending runtime switches are returned first, unconditionally — they are
  *     operator actions, not a consequence of context pressure.
- *   - Read `usage.getLastContextTokens()` (the most recent assistant
- *     message's reported input token count — authoritative provider-side).
- *   - If it exceeds `thresholdTokens`, compact.
+ *   - Read the completed turn's own provider-reported usage
+ *     (`calculateContextTokens`), falling back to the persisted watermark
+ *     (`usage.getLastContextTokens()`). Both are the same provider-side signal.
+ *   - Compact when it exceeds `min(cap, window - RESERVE_TOKENS)`. The window
+ *     always clamps, including an explicitly configured cap: a trigger above
+ *     the model's real window would fire after the failure it exists to
+ *     prevent. Unknown window → the cap alone applies.
  *
  * Compaction modes:
  *   - **LLM-summary** (when `opts.compact` is provided): Pi's cut-point
@@ -96,7 +112,12 @@ function toVirtualEntries(messages: AgentMessage[]): Entry[] {
 export function makePrepareNextTurn(opts: {
   sessionId: string;
   usage: UsageTracker;
+  /** Trigger cap in tokens. The model's window still clamps it downward. */
   thresholdTokens?: number;
+  /** The running model's context window, from the subscription's catalog
+   *  entry (`buildModel(subscription).contextWindow`). Omitted/0 → the cap is
+   *  used as-is. */
+  contextWindow?: number | undefined;
   keepRecentMessages?: number;
   emitEvent: (type: string, payload: Record<string, unknown>) => Promise<unknown>;
   compact?: SummaryRuntime;
@@ -108,11 +129,19 @@ export function makePrepareNextTurn(opts: {
   /** Explicit operator request from /compact. Consumed once. */
   takeCompactionRequest?: (() => boolean) | undefined;
 }): (ctx: PrepareNextTurnContext, signal?: AbortSignal) => Promise<AgentLoopTurnUpdate | undefined> {
-  const threshold =
+  const cap =
     opts.thresholdTokens ??
     (Number.isFinite(Number(process.env.FORGE_COMPACTION_THRESHOLD))
       ? Number(process.env.FORGE_COMPACTION_THRESHOLD)
       : DEFAULT_COMPACTION_THRESHOLD);
+  const contextWindow = opts.contextWindow ?? 0;
+  // The window clamps any cap, including an operator-set one (Codex clamps its
+  // own user-set limit the same way, at 90% of the window). RESERVE_TOKENS must
+  // not swallow the window on a small model, hence the 25% floor.
+  const windowLimit = contextWindow > 0
+    ? Math.max(contextWindow - RESERVE_TOKENS, Math.round(contextWindow * 0.25))
+    : null;
+  const threshold = windowLimit === null ? cap : Math.min(cap, windowLimit);
   const keepRecent = opts.keepRecentMessages ?? DEFAULT_KEEP_RECENT_MESSAGES;
   const keepRecentTokens = Number.isFinite(
     Number(process.env.FORGE_COMPACTION_KEEP_RECENT_TOKENS),
@@ -184,7 +213,7 @@ export function makePrepareNextTurn(opts: {
       try {
         const preparation = prepareCompaction(toVirtualEntries(messages), {
           enabled: true,
-          reserveTokens: 16_384,
+          reserveTokens: RESERVE_TOKENS,
           keepRecentTokens,
         });
         if (

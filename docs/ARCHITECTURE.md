@@ -106,9 +106,14 @@ cannot leave a partially imported transcript that looks complete.
 
 ## Context management
 
-Pi compaction in `prepareNextTurn` is the primary mechanism. Provider-reported
-per-turn usage decides when to compact. `transformContext` is a coarse
-last-resort bound based on estimated size.
+Pi compaction in `prepareNextTurn` is the only mechanism that changes what the
+model sees. Provider-reported per-turn usage decides when: it compacts above
+`min(120K, modelWindow − 16K)` — the window always clamps, so a narrow model
+compacts early instead of dying at its own limit. The kernel installs no
+`transformContext` (removed 2026-09-18): a per-request transform truncated the
+outgoing prompt without leaving a record, which diverged from the transcript
+*and* — because the provider then reported the truncated size — held this
+trigger below its own threshold.
 
 A successful `COMPACTION` event carries the complete post-compaction model
 context. Recovery folds that event as a replacement boundary, then appends

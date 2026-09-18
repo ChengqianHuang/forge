@@ -11,7 +11,6 @@ import { appendEvent } from "./core/persistence/event-log.ts";
 import { mapAgentEventToPersisted } from "./events/mapper.ts";
 import { makeBeforeToolCall } from "./guardrails/before-tool-call.ts";
 import { makeAfterToolCall } from "./guardrails/after-tool-call.ts";
-import { makeTransformContext } from "./guardrails/transform-context.ts";
 import { makePrepareNextTurn } from "./guardrails/compaction.ts";
 import { makeShouldStopAfterTurn } from "./guardrails/should-stop-after-turn.ts";
 import type { GuardrailConfig } from "./guardrails/types.ts";
@@ -123,13 +122,21 @@ export async function runAgent(opts: {
       afterToolCall: makeAfterToolCall(guardrails),
       shouldStopAfterTurn: makeShouldStopAfterTurn(guardrails),
       getSteeringMessages: async () => guardrails.steeringQueue.splice(0),
-      transformContext: makeTransformContext(),
-      // prepareNextTurn uses provider-reported per-turn usage rather than the
-      // character estimate in transformContext. The summary call reuses the
-      // subscription stream without persisting credentials.
+      // No `transformContext` here, by decision (2026-09-18). The kernel
+      // installs exactly ONE mechanism that changes what the model sees, and
+      // it is `prepareNextTurn` below — whose result is persisted as a
+      // COMPACTION event and replayed on resume. A per-request transform
+      // rewrote the outgoing prompt without touching the transcript (so the
+      // live context and the recorded one disagreed), and because the provider
+      // then reported the *truncated* size, it silently held this hook's own
+      // trigger below its threshold. Multi-tier context handling is normal
+      // (Claude Code, Cline) — a tier that leaves no record is not.
       prepareNextTurn: makePrepareNextTurn({
         sessionId: session.id,
         usage: guardrails.usage,
+        // The model's real window decides the trigger. A fixed token count is
+        // wrong for anything that is not ~200K wide (see compaction.ts).
+        contextWindow: model.contextWindow,
         emitEvent: (type, payload) => emitEvent(type as Parameters<typeof appendEvent>[1], payload),
         takeModelSwitch,
         takeThinkingSwitch,
@@ -148,9 +155,10 @@ export async function runAgent(opts: {
       }),
     };
     Object.assign(config, plugins?.hooks(coreHooks) ?? coreHooks);
-  } else {
-    config.transformContext = makeTransformContext();
   }
+  // A run without guardrails gets no context management at all — deliberately.
+  // The old `else` branch installed the blunt transformer here, which is the
+  // one thing this file must not do: rewrite the prompt without a record.
 
   const prompts: AgentMessage[] = [
     {
