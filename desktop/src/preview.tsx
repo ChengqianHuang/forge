@@ -435,26 +435,26 @@ if (scene === "plugins") {
     plugins: [
       {
         id: "forge.capability-health", name: "Capability Health", version: "1.0.0",
-        description: "能力生命周期与故障隔离的检视面板。", required: true,
+        description: "能力生命周期与故障隔离的检视面板。", required: true, source: "builtin",
         capabilities: ["ui"], userDisabled: false, config: {},
         ui: [{ id: "capability-health", label: "能力", surface: "session-header", renderer: "capability-health" }],
       },
       {
         id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0",
-        description: "核心护栏裁决历史的审计检视面板。", required: true,
+        description: "核心护栏裁决历史的审计检视面板。", required: true, source: "builtin",
         capabilities: ["ui"], userDisabled: false, config: {},
         ui: [{ id: "guard-audit", label: "审计", surface: "session-header", renderer: "guard-audit" }],
       },
       {
         id: "forge.reliability", name: "Harness Reliability", version: "1.0.0",
         description: "从事件日志投影的运行承诺核对：护栏覆盖、审批延迟、取消与恢复。",
-        required: true, capabilities: ["read-action", "ui"], userDisabled: false, config: {},
+        required: true, source: "builtin", capabilities: ["read-action", "ui"], userDisabled: false, config: {},
         ui: [{ id: "reliability", label: "诊断", surface: "session-header", renderer: "reliability" }],
       },
       {
         id: "forge.session-commands", name: "Session commands", version: "1.0.0",
         description: "会话内斜杠命令：/compact · /status · /context。",
-        capabilities: ["slash-command"], userDisabled: false, config: {},
+        source: "builtin", capabilities: ["slash-command"], userDisabled: false, config: {},
         slashCommands: [
           { name: "compact", description: "Compact context at the next turn boundary" },
           { name: "status", description: "Show the current session status" },
@@ -464,7 +464,7 @@ if (scene === "plugins") {
       {
         id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0",
         description: "会话工作区的 Git 变更快照与逐文件 diff 审阅。",
-        capabilities: ["event-subscriber", "read-action", "ui"], userDisabled: false,
+        source: "builtin", capabilities: ["event-subscriber", "read-action", "ui"], userDisabled: false,
         config: { gitTimeoutMs: 4000, diffMaxBytes: 262144 },
         configSchema: [
           { key: "gitTimeoutMs", label: "Git 超时（毫秒）", type: "number", default: 4000, description: "单条 git 命令的最长等待时间，大仓库可适当调大。" },
@@ -475,8 +475,18 @@ if (scene === "plugins") {
       {
         id: "mcp.demo", name: "demo MCP server", version: "1.0.0",
         description: "外部 MCP 服务器的工具桥接。",
-        capabilities: ["tool"], userDisabled: true, config: {},
+        source: "builtin", capabilities: ["tool"], userDisabled: true, config: {},
       },
+      {
+        id: "ext.greet", name: "Greet", version: "1.0.0",
+        description: "外部示例插件：/greet 问候。",
+        source: "external", capabilities: ["slash-command"], userDisabled: false, config: { who: "forge" },
+        configSchema: [{ key: "who", label: "称呼", type: "string", default: "world" }],
+        slashCommands: [{ name: "greet", description: "say hi" }],
+      },
+    ],
+    errors: [
+      { source: "weather.plugin.ts", reason: "Transform failed: Unexpected end of file" },
     ],
   };
   const realFetch = globalThis.fetch.bind(globalThis);

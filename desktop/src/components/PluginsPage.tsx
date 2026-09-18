@@ -18,6 +18,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
 
 export function PluginsPage() {
   const [plugins, setPlugins] = useState<PluginCatalogEntryView[] | null>(null);
+  const [externalErrors, setExternalErrors] = useState<Array<{ source: string; reason: string }>>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [busyId, setIdBusy] = useState<string | null>(null);
@@ -26,7 +27,9 @@ export function PluginsPage() {
   async function load() {
     setLoadError(null);
     try {
-      setPlugins(await fetchPlugins());
+      const catalog = await fetchPlugins();
+      setPlugins(catalog.plugins);
+      setExternalErrors(catalog.errors);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
     }
@@ -47,7 +50,8 @@ export function PluginsPage() {
       : plugins;
     return {
       required: visible.filter((p) => p.required),
-      optional: visible.filter((p) => !p.required),
+      optional: visible.filter((p) => !p.required && p.source !== "external"),
+      external: visible.filter((p) => p.source === "external"),
     };
   }, [plugins, q]);
 
@@ -104,6 +108,19 @@ export function PluginsPage() {
 
         {actionError && <div style={errorBox}>{actionError}</div>}
 
+        {externalErrors.length > 0 && (
+          <div style={errorBox}>
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>外部插件加载失败（下次启动前可修正文件）</div>
+              {externalErrors.map((e) => (
+                <div key={e.source} style={{ fontFamily: "monospace", fontSize: 11.5 }}>
+                  {e.source}: {e.reason}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {filtered && filtered.required.length > 0 && (
           <Group label="内核能力" note="会话基座，始终激活">
             {filtered.required.map((p) => (
@@ -118,7 +135,14 @@ export function PluginsPage() {
             ))}
           </Group>
         )}
-        {filtered && filtered.required.length === 0 && filtered.optional.length === 0 && (
+        {filtered && filtered.external.length > 0 && (
+          <Group label="外部插件" note="~/.forge/plugins，启动时加载">
+            {filtered.external.map((p) => (
+              <PluginCard key={p.id} plugin={p} busy={busyId === p.id} onToggle={toggle} onSaveConfig={saveConfig} />
+            ))}
+          </Group>
+        )}
+        {filtered && filtered.required.length === 0 && filtered.optional.length === 0 && filtered.external.length === 0 && (
           <div style={empty}>没有匹配的插件。</div>
         )}
       </div>
@@ -168,6 +192,7 @@ function PluginCard({ plugin, busy, onToggle, onSaveConfig }: {
           </div>
           {plugin.description && <div style={description}>{plugin.description}</div>}
           <div style={chipRow}>
+            {plugin.source === "external" && <span style={externalTag}>外部</span>}
             {plugin.capabilities.map((capability) => (
               <span key={capability} style={chip}>{CAPABILITY_LABELS[capability] ?? capability}</span>
             ))}
@@ -349,6 +374,7 @@ const nameRow = { display: "flex", alignItems: "baseline", gap: 8 };
 const name = { fontSize: 13.5, fontWeight: 600, color: "var(--text)" };
 const version = { fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)" };
 const coreTag = { fontSize: 10, fontWeight: 600, color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 4, padding: "0 5px", lineHeight: "16px" };
+const externalTag = { fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", border: "1px solid var(--border-strong)", borderRadius: 4, padding: "0 5px", lineHeight: "16px" };
 const description = { fontSize: 12.5, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 };
 const chipRow = { display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" as const };
 const chip = { fontSize: 10.5, color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" };

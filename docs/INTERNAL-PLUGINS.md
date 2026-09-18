@@ -230,3 +230,16 @@ as `WORKSPACE_CHANGES`; they still use that one log and SSE path.
 `PLUGIN_DISABLED` means a user pause; failure isolation has its own unambiguous
 `PLUGIN_FAILED` fact. The desktop never consumes a separate plugin event
 channel.
+
+## External plugins
+
+A plugin does not have to be compiled in. `<forgeHome>/plugins/*.plugin.{ts,js,mjs}`
+files whose **default export** is a `ForgePlugin` are loaded at server start
+into the same registry as builtins — same manifest rules, same capability
+validation, same global enablement/config preferences, same manager page
+(grouped as 外部插件 with a source tag).
+
+Loading is fail-isolated per file: a syntax error, a malformed manifest, or an
+id collision is reported to the manager page's load-error banner and the
+server (and every other plugin) keeps working. The directory is read once per
+server start; changes apply on restart.

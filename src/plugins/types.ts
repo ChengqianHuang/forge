@@ -147,6 +147,8 @@ export type PluginCatalogEntry = Omit<
   PluginRuntimeDescriptor,
   "status" | "failurePhase" | "failureReason"
 > & {
+  /** Where the plugin came from: compiled-in or `<forgeHome>/plugins`. */
+  source: "builtin" | "external";
   userDisabled: boolean;
   config: Record<string, unknown>;
 };

@@ -12,6 +12,7 @@ import { buildModel, modelThinkingLevels } from "./model-resolver.ts";
 import type { ThinkingLevel } from "../types.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 import { createMcpPlugin, McpStdioClient } from "../plugins/mcp.ts";
+import { loadExternalPlugins } from "./external-plugins.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
 const THINKING_LEVEL_VALUES: ReadonlySet<string> = new Set([
@@ -46,6 +47,21 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
   const projects = new ProjectsRegistry(opts.forgeHome);
   const approvalHub = new ApprovalHub();
   const plugins = createBuiltinPluginRegistry();
+  // External plugins from <forgeHome>/plugins join the same registry; a file
+  // that fails to load is reported to the manager page, never fatal.
+  const external = await loadExternalPlugins(opts.forgeHome);
+  const externalPluginIds = new Set<string>();
+  for (const plugin of external.plugins) {
+    try {
+      plugins.register(plugin);
+      externalPluginIds.add(plugin.manifest.id);
+    } catch (err) {
+      external.errors.push({
+        source: plugin.manifest.id,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   const startupConfig = await loadForgeConfig(opts.forgeHome);
   for (const mcp of startupConfig.mcpServers ?? []) {
     if (!mcp.enabled) continue;
@@ -55,7 +71,14 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
       createClient: () => new McpStdioClient(mcp.command, mcp.args, mcp.cwd, mcp.env),
     }));
   }
-  const manager = new SessionManager({ forgeHome: opts.forgeHome, projects, approvalHub, plugins });
+  const manager = new SessionManager({
+    forgeHome: opts.forgeHome,
+    projects,
+    approvalHub,
+    plugins,
+    externalPluginIds,
+    pluginLoadErrors: external.errors,
+  });
   await manager.reconcileInterruptedSessions();
   const token = newToken();
 
@@ -189,7 +212,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
 
       // --- Plugin manager (global) ---
       if (req.method === "GET" && parts[0] === "plugins" && parts.length === 1) {
-        json(res, 200, { plugins: await manager.pluginCatalog() });
+        json(res, 200, await manager.pluginCatalog());
         return;
       }
 

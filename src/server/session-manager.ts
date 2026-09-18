@@ -156,6 +156,8 @@ export class SessionManager {
    */
   private runtimes = new Map<string, SessionRuntime>();
   private readonly plugins: PluginRegistry;
+  private readonly externalPluginIds: ReadonlySet<string>;
+  private readonly pluginLoadErrors: ReadonlyArray<{ source: string; reason: string }>;
 
   constructor(
     private readonly opts: {
@@ -163,11 +165,17 @@ export class SessionManager {
       projects: ProjectsRegistry;
       approvalHub: ApprovalHub;
       plugins?: PluginRegistry;
+      /** Ids registered from `<forgeHome>/plugins` — marked "external" in the manager catalog. */
+      externalPluginIds?: ReadonlySet<string>;
+      /** Per-file failures from the external plugin directory, surfaced verbatim. */
+      pluginLoadErrors?: ReadonlyArray<{ source: string; reason: string }>;
       /** Test seam for lifecycle behavior; production uses the real Pi loop. */
       agentRunner?: typeof runAgent;
     },
   ) {
     this.plugins = opts.plugins ?? createBuiltinPluginRegistry();
+    this.externalPluginIds = opts.externalPluginIds ?? new Set();
+    this.pluginLoadErrors = opts.pluginLoadErrors ?? [];
   }
 
   /** Repair sessions left in `running` by a previous process. The failed
@@ -632,17 +640,23 @@ export class SessionManager {
     return { ok: true };
   }
 
-  /** Registration-time catalog for the global plugin manager page. */
-  async pluginCatalog(): Promise<PluginCatalogEntry[]> {
+  /** Registration-time catalog for the global plugin manager page, plus the
+   * per-file failures of the external plugin directory. */
+  async pluginCatalog(): Promise<{
+    plugins: PluginCatalogEntry[];
+    errors: Array<{ source: string; reason: string }>;
+  }> {
     const prefs = await loadPluginPreferences(this.opts.forgeHome);
-    return this.plugins.capabilities().plugins.map((plugin) => {
+    const plugins = this.plugins.capabilities().plugins.map((plugin) => {
       const { status: _status, failurePhase: _phase, failureReason: _reason, ...manifest } = plugin;
       return {
         ...manifest,
+        source: this.externalPluginIds.has(plugin.id) ? ("external" as const) : ("builtin" as const),
         userDisabled: prefs.disabled.includes(plugin.id),
         config: resolvePluginConfig(plugin.configSchema, prefs.config[plugin.id]),
       };
     });
+    return { plugins, errors: [...this.pluginLoadErrors] };
   }
 
   /** Global enablement preference, applied when a session next activates

@@ -102,8 +102,11 @@ export async function setSessionPluginEnabled(id: string, pluginId: string, enab
 
 // --- plugin manager (global) ---
 
-export async function fetchPlugins(): Promise<PluginCatalogEntryView[]> {
-  return (await getJson<{ plugins: PluginCatalogEntryView[] }>("/plugins")).plugins;
+export async function fetchPlugins(): Promise<{
+  plugins: PluginCatalogEntryView[];
+  errors: Array<{ source: string; reason: string }>;
+}> {
+  return getJson("/plugins");
 }
 
 export async function setGlobalPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
