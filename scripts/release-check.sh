@@ -41,6 +41,7 @@ check "vendored pi integrity" "cd $ROOT && git ls-files --error-unmatch pi/packa
 # pi/packages/*, so a fresh clone (CI!) has no runtime without it. This gate
 # exists because pi/.gitignore once silently excluded dist/ and CI failed 14/26
 # while every local run was green — the same failure shape as the pi/ exclusion.
+check "capability seams fresh" "cd $ROOT && npx tsx scripts/gen-capability-seams.ts --check"
 check "pi dist integrity"     "cd $ROOT && git ls-files --error-unmatch pi/packages/agent/dist/index.js >/dev/null && git ls-files --error-unmatch pi/packages/ai/dist/index.js >/dev/null && git ls-files --error-unmatch pi/packages/coding-agent/dist/index.js >/dev/null"
 
 echo ""

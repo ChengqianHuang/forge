@@ -221,6 +221,12 @@ handles so a broken child lifecycle cannot pin server shutdown.
 Settings changes to MCP server definitions currently take effect after Forge
 restarts. Hot replacement is not implemented.
 
+The generated [`capability-seams.md`](capability-seams.md) is the machine-checked
+map of every capability's runtime contributions (hooks through the kernel
+multiplexer, tools, commands, services, read actions, UI surfaces, config
+keys). Regenerate with `npm run gen:seams`; the release gate fails when it is
+stale.
+
 ## Events
 
 The registry writes `PLUGIN_LOADED`, `PLUGIN_ENABLED`, `PLUGIN_DISABLED`,

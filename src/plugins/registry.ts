@@ -352,6 +352,25 @@ export class PluginHost {
     return { plugins, slashCommands, uiContributions };
   }
 
+  /** Runtime contribution facts of the live instances, for tooling (the
+   * capability-seams generated doc). Facts, not prose: what each plugin
+   * actually attached after activation. */
+  inspectContributions(): Array<{
+    id: string;
+    hooks: string[];
+    tools: string[];
+    services: string[];
+    subscribesEvents: boolean;
+  }> {
+    return [...this.instances.entries()].map(([id, instance]) => ({
+      id,
+      hooks: Object.keys(instance.hooks ?? {}),
+      tools: (instance.tools ?? []).map((tool) => tool.name),
+      services: Object.keys(instance.services ?? {}),
+      subscribesEvents: typeof instance.onAgentEvent === "function",
+    }));
+  }
+
   tools(reservedNames: Iterable<string> = []): AgentTool<any>[] {
     const reserved = new Set(reservedNames);
     return [...this.instances.entries()].flatMap(([id, instance]) =>

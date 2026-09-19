@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps --import tsx/esm src/cli/serve.ts",
     "bench": "node --enable-source-maps --import tsx/esm src/cli/benchmark.ts",
     "reliability": "node --enable-source-maps --import tsx/esm src/cli/reliability.ts",
-    "real-bench": "node --enable-source-maps --import tsx/esm src/cli/real-bench.ts"
+    "real-bench": "node --enable-source-maps --import tsx/esm src/cli/real-bench.ts",
+    "gen:seams": "tsx scripts/gen-capability-seams.ts"
   },
   "devDependencies": {
     "@types/node": "24.12.4",
