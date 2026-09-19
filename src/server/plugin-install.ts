@@ -12,9 +12,9 @@ export { externalPluginsDir } from "./external-plugins.ts";
 const execFileAsync = promisify(execFile);
 
 /**
- * The install flow behind the manager page's 添加插件 wizard (the DSH
- * inspect → install → enable-now sequence, reduced to Forge's copy-in
- * contract). A source is either a local `*.plugin.{ts,js,mjs}` file, a local
+ * The install flow behind the manager page's 添加插件 wizard uses an
+ * inspect → install → enable-now sequence under Forge's copy-in contract.
+ * A source is either a local `*.plugin.{ts,js,mjs}` file, a local
  * directory holding such files, or a git URL (shallow-cloned to a temp dir).
  * Inspect validates the candidate modules without touching forge home;
  * install copies the files in and returns the validated plugins so the host

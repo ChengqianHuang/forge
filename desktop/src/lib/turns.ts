@@ -1,7 +1,7 @@
 import type { TimelineEntry } from "../types.ts";
 
 /**
- * Turn-process folding (DSH form): within a settled turn, tool rows and
+ * Turn-process folding: within a settled turn, tool rows and
  * informational notices collapse into one summary bar; the user's prompt, the
  * model's own words, and warning notices (stuck detection, failures) are never
  * folded. The live segment of a running session stays fully expanded — folding

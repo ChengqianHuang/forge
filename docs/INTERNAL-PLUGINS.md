@@ -2,13 +2,14 @@
 
 ## Scope
 
-Forge uses “plugin” to mean a Forge-owned, compiled-in capability module. It is
-an architectural discipline for keeping the kernel small, not a public plugin
-ecosystem.
+Forge uses “plugin” for capabilities that attach through its registry. Built-in
+plugins are Forge-owned and compiled in; explicitly user-installed plugins may
+load from a local file or Git source through the same contract. This keeps the
+kernel small while allowing the platform to remain open.
 
-Forge currently does not provide third-party package discovery, a marketplace,
-remote installation or a compatibility target for another harness. Adding any
-of those requires a separate product decision.
+Forge does not provide a centralized marketplace, compatibility with another
+agent framework, or a security sandbox for external code. Installation is an
+explicit trust decision by the user.
 
 ## Why the registry exists
 
@@ -116,12 +117,13 @@ The desktop plugin manager page (`GET /plugins`,
 
 A plugin disabled at activation is **not mounted**: `activate()` does not run
 and no resources are acquired. Toggling it on mid-session mounts it on demand
-(contributions conflict-checked against everything already mounted). This is
-the DSH form: disabled means not present, not present-but-gated.
+(contributions conflict-checked against everything already mounted). Disabled
+means not present, not present-but-gated.
 
-This is cooperative in-process isolation, not a security sandbox. Forge-owned
-plugins are trusted code. A CPU-blocking module can still block the monolith;
-the registry must not claim process isolation it does not provide.
+This is cooperative in-process isolation, not a security sandbox. Built-in and
+user-installed plugins are trusted code once loaded. A CPU-blocking module can
+still block the monolith; the registry must not claim process isolation it does
+not provide.
 
 ## Current built-in capabilities
 

@@ -6,7 +6,7 @@ import { createBuiltinPluginRegistry } from "../src/plugins/builtins/index.ts";
 import type { PluginSessionContext } from "../src/plugins/types.ts";
 
 /**
- * Generated architecture guard (the DSH capability-seams idea): the table is
+ * Generated architecture guard: the table is
  * extracted from the LIVE builtin registry — each plugin is activated against
  * a scratch workspace and its runtime contributions recorded as facts.
  * `--check` regenerates and fails if docs/capability-seams.md is stale, so

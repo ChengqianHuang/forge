@@ -20,8 +20,8 @@ export type PluginCapability =
    */
   | "read-action";
 
-/** One parameter of a plugin's declared config schema (the DSH-style
- * schemastery role, deliberately reduced to four wire-safe field types). */
+/** One parameter of a plugin's manifest-driven config schema, deliberately
+ * reduced to four wire-safe field types. */
 export interface PluginConfigField {
   key: string;
   label: string;

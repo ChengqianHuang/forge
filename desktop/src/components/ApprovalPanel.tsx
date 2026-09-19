@@ -1,7 +1,7 @@
 import { store } from "../lib/store.ts";
 import type { ApprovalRecordView } from "../types.ts";
 
-/** DSH-form approval: the card takes over the composer in place instead of
+/** In-place approval: the card takes over the composer instead of
  * popping a modal over the transcript. Reject / Allow-once are the only
  * answers — a durable posture belongs to the approval-mode picker. */
 export function ApprovalPanel({ request }: { request: ApprovalRecordView }) {

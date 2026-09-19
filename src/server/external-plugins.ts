@@ -4,8 +4,8 @@ import { pathToFileURL } from "node:url";
 import type { ForgePlugin } from "../plugins/types.ts";
 
 /**
- * External plugin contract (the DSH "out-of-tree plugin" role, reduced to
- * Forge's in-process monolith): a plugin is one ESM module in
+ * External plugin contract for Forge's in-process monolith: a plugin is one
+ * ESM module in
  * `<forgeHome>/plugins/*.plugin.{ts,js,mjs}` whose **default export** is a
  * `ForgePlugin` — the same shape compiled-in plugins use, so the manifest
  * (id/name/version/capabilities/configSchema), activate(), read() and the

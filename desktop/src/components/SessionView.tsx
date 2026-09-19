@@ -68,7 +68,7 @@ function Notice({ entry }: { entry: Extract<TimelineEntry, { kind: "notice" }> }
   );
 }
 
-/** Collapsed tool/notice run of one settled turn (DSH turn-process folding).
+/** Collapsed tool/notice run of one settled turn.
  * The user's prompt, the model's prose and warn notices render in place; this
  * bar stands where the run began and expands back to the original rows. */
 function TurnFoldBar({ run, expanded, onToggle }: {

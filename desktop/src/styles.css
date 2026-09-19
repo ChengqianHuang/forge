@@ -778,7 +778,7 @@ body.preview-hover .session-del { display: inline-flex; }
   .change-badges { grid-column: 2; justify-content: flex-start; }
 }
 
-/* Approval takeover (DSH form): the pending request replaces the composer
+/* Approval takeover: the pending request replaces the composer
    box in place; answering restores the composer atomically. */
 .approval-card {
   position: relative;

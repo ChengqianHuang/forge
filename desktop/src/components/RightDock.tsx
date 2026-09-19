@@ -19,7 +19,7 @@ type WorkspaceDirEntryView = { name: string; type: "dir" | "file"; size: number 
 type WorkspaceFileContentView = { path: string; kind: "text" | "binary"; content: string; bytes: number; truncated: boolean };
 
 /**
- * Per-session right dock (DSH form): a parked workspace column beside the
+ * Per-session right dock: a parked workspace column beside the
  * transcript. Tabs come from the session's active UI contributions — the same
  * plugin-driven set the session header exposes — and each renderer owns its
  * data. `push` presentation pushes the transcript narrower; layout (open,

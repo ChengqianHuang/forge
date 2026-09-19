@@ -9,10 +9,11 @@ The model supplies judgment. Pi supplies the agent loop and model runtime.
 Forge supplies the environment in which that intelligence can act safely,
 remain observable and recover from interruption.
 
-“Platform” has a precise meaning here: multiple Forge-owned capabilities can
-share a stable session runtime, guardrails, event history and desktop surface
-without each feature modifying the agent loop. It does not mean a public
-plugin marketplace or compatibility with another agent framework.
+“Platform” has a precise meaning here: built-in and explicitly user-installed
+capabilities can share a stable session runtime, guardrails, event history and
+desktop surface without each feature modifying the agent loop. Forge owns the
+contract; openness does not require a central marketplace or compatibility with
+another agent framework.
 
 Forge is not a chatbot, a thin model wrapper, a general workflow engine or a
 second agent loop around Pi.
@@ -55,7 +56,7 @@ A session is more than a live request. Its configuration, ordered events and
 recovery data survive the process that is currently executing it. The event
 log is the durable history; live streams and projections derive from it.
 
-### Composable first-party capabilities
+### Composable capabilities
 
 Slash commands, usage tracking, tool adapters and future product abilities
 attach through one internal registry. Capabilities receive a scoped session
@@ -128,9 +129,11 @@ The internal registry may compose only explicit kinds of contributions:
 New extension-point categories require a demonstrated first-party need. The
 registry must not become a speculative framework.
 
-Registration is compiled in and reviewed with the rest of Forge. There is no
-runtime package discovery, remote installation, public compatibility contract
-or third-party trust boundary.
+Built-in registration is compiled in and reviewed with the rest of Forge.
+User-installed plugins may join the same registry from an explicit local or Git
+source. They use Forge's contract and compiled desktop renderers; Forge does not
+claim a compatibility layer for another framework or a security sandbox for
+in-process plugin code.
 
 MCP remains a tool transport. An MCP server may supply tools, but it does not
 become part of Forge's internal capability model and does not bypass Forge's
@@ -155,8 +158,7 @@ interaction language.
 
 Forge is not currently building:
 
-- a public or third-party plugin ecosystem;
-- a plugin marketplace or package installer;
+- a centralized plugin marketplace or package-distribution service;
 - a compatibility clone of another harness;
 - a general-purpose workflow or orchestration language;
 - a second implementation of Pi features;

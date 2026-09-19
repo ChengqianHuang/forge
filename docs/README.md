@@ -9,7 +9,7 @@ Read in this order:
 1. [Product direction](PRODUCT.md) — product promise, boundaries and decisions.
 2. [Architecture](ARCHITECTURE.md) — ownership and runtime flow.
 3. [Guardrails](GUARDRAILS.md) — what Forge constrains and why.
-4. [Internal plugins](INTERNAL-PLUGINS.md) — how Forge-owned capabilities attach.
+4. [Plugin platform](INTERNAL-PLUGINS.md) — how built-in and user-installed capabilities attach.
 5. [Harness reliability](RELIABILITY.md) — event-derived kernel measurements.
 6. [Development](DEVELOPMENT.md) — change discipline and verification.
 
@@ -18,9 +18,10 @@ they conflict with prose here.
 
 ## Product position
 
-Forge is a desktop engineering-agent platform. “Platform” means its own
-capabilities share stable internal attachment points; it does not mean a
-third-party plugin marketplace or a compatibility clone of another harness.
+Forge is a desktop engineering-agent platform. Built-in and user-installed
+capabilities share the same Forge attachment points. Openness means a documented
+Forge contract and explicit local/Git installation; it does not mean a central
+marketplace or compatibility with another agent framework.
 
 The LLM supplies judgment. Forge supplies behavioral constraints, durable
 records, recovery and a complete desktop workbench.
