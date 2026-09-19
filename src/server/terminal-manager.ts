@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { spawn as ptySpawn, type IPty } from "node-pty";
 
 /**
@@ -35,7 +36,11 @@ export class TerminalManager {
       throw new Error("terminal limit reached; exit one and retry");
     }
     const id = randomUUID();
-    const shell = process.env.SHELL || "/bin/zsh";
+    // First candidate that exists: $SHELL on macOS/desktop machines, then
+    // zsh, then bash (ubuntu CI and slim linux images have no zsh).
+    const shell = [process.env.SHELL, "/bin/zsh", "/bin/bash"].find(
+      (candidate) => candidate && existsSync(candidate),
+    ) ?? "/bin/bash";
     const entry: TerminalEntry = {
       pty: ptySpawn(shell, ["-l"], {
         name: "xterm-256color",
