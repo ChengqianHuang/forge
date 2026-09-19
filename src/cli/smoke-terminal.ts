@@ -28,7 +28,7 @@ const post = async (path: string, body?: unknown) => {
   const r = await fetch(`${handle.url}${path}`, {
     method: "POST",
     headers: body !== undefined ? { ...auth, "content-type": "application/json" } : auth,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return { status: r.status, body: await r.json().catch(() => null) as Record<string, unknown> | null };
 };
