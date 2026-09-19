@@ -54,11 +54,13 @@ export interface PluginReadActionDescriptor {
 }
 
 /** Compiled-in desktop contribution. The server declares placement and a
- * stable renderer key; the desktop owns the matching React implementation. */
+ * stable renderer key; the desktop owns the matching React implementation.
+ * `session-header` contributes a header action that opens its dock tab;
+ * `dock` contributes the dock tab itself. */
 export interface PluginUiContribution {
   id: string;
   label: string;
-  surface: "session-header";
+  surface: "session-header" | "dock";
   renderer: string;
   readAction?: string;
 }

@@ -2,12 +2,42 @@ import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { store } from "../lib/store.ts";
 
-/** Render assistant/user text as GitHub-flavored markdown with code highlighting. */
+/** A code span reads as a workspace path when it looks like one: slash-
+ * separated, file extension, no spaces or scheme. Clicking it opens the file
+ * in the session dock. */
+function looksLikeWorkspacePath(text: string): boolean {
+  return /^[\w@.][\w@./-]*\.[A-Za-z0-9]{1,8}$/.test(text) && text.includes("/") && !text.includes("..");
+}
+
+/** Render assistant/user text as GitHub-flavored markdown with code highlighting.
+ * Workspace-path code spans deep-link into the dock's file tab. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        components={{
+          code(props) {
+            const { className, children } = props;
+            const raw = String(children ?? "").replace(/^\.\//, "");
+            if (!className && looksLikeWorkspacePath(raw)) {
+              return (
+                <code
+                  className="md-file-link"
+                  title="在会话工作区中打开"
+                  onClick={() => store.getState().requestDockFile(raw)}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return <code className={className}>{children}</code>;
+          },
+        }}
+      >
         {text}
       </ReactMarkdown>
     </div>

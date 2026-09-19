@@ -5,6 +5,7 @@ import { reliabilityPlugin } from "./reliability.ts";
 import { sessionCommandsPlugin } from "./session-commands.ts";
 import { usagePlugin } from "./usage.ts";
 import { workspaceChangesPlugin } from "./workspace-changes.ts";
+import { workspaceFilesPlugin } from "./workspace-files.ts";
 
 export function createBuiltinPluginRegistry(): PluginRegistry {
   const registry = new PluginRegistry();
@@ -14,5 +15,6 @@ export function createBuiltinPluginRegistry(): PluginRegistry {
   registry.register(guardAuditPlugin);
   registry.register(reliabilityPlugin);
   registry.register(workspaceChangesPlugin);
+  registry.register(workspaceFilesPlugin);
   return registry;
 }

@@ -12,6 +12,9 @@ import { GuardAuditContent } from "./GuardAuditDialog.tsx";
 import { ReliabilityContent } from "./ReliabilityDialog.tsx";
 import { WorkspaceChangesContent } from "./WorkspaceChangesDialog.tsx";
 
+type WorkspaceDirEntryView = { name: string; type: "dir" | "file"; size: number | null };
+type WorkspaceFileContentView = { path: string; kind: "text" | "binary"; content: string; bytes: number; truncated: boolean };
+
 /**
  * Per-session right dock (DSH form): a parked workspace column beside the
  * transcript. Tabs come from the session's active UI contributions — the same
@@ -59,6 +62,8 @@ type DockRendererProps = {
   conversation: ConversationView;
   capabilities: PluginCapabilitySnapshot;
   running: boolean;
+  /** Transcript deep-link: the latest requested file path (monotonic seq). */
+  fileRequest?: { path: string; seq: number } | null;
 };
 
 function WorkspaceChangesRenderer({ sessionId, pluginId, readAction, conversation }: DockRendererProps) {
@@ -150,11 +155,123 @@ function CapabilityHealthRenderer({ sessionId, capabilities, conversation, runni
   );
 }
 
+function dirnameOf(path: string): string {
+  const normalized = path.replace(/^\.\//, "").replace(/\/+$/, "");
+  const idx = normalized.lastIndexOf("/");
+  return idx === -1 ? "." : normalized.slice(0, idx) || ".";
+}
+
+function formatSize(bytes: number | null): string {
+  if (bytes === null) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Workspace file browser: lazy per-directory listing on the left, a bounded
+ * preview below. Deep links from the transcript open the file's directory and
+ * load its content. */
+function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRendererProps) {
+  const [dir, setDir] = useState(".");
+  const [entries, setEntries] = useState<WorkspaceDirEntryView[] | null>(null);
+  const [file, setFile] = useState<WorkspaceFileContentView | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [loadingFile, setLoadingFile] = useState(false);
+  const lastSeq = useRef(-1);
+
+  useEffect(() => {
+    let alive = true;
+    setListError(null);
+    readCapability<{ path: string; entries: WorkspaceDirEntryView[] }>(sessionId, pluginId, "list", { path: dir })
+      .then((result) => {
+        if (alive) setEntries(result.entries);
+      })
+      .catch((err) => {
+        if (alive) {
+          setEntries(null);
+          setListError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => { alive = false; };
+  }, [sessionId, pluginId, dir]);
+
+  const openFile = useCallback(async (path: string) => {
+    setLoadingFile(true);
+    setFileError(null);
+    setFile(null);
+    try {
+      setFile(await readCapability<WorkspaceFileContentView>(sessionId, pluginId, "read", { path }));
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingFile(false);
+    }
+  }, [sessionId, pluginId]);
+
+  // Transcript deep links: navigate to the file's directory and load it.
+  useEffect(() => {
+    if (!fileRequest || fileRequest.seq === lastSeq.current) return;
+    lastSeq.current = fileRequest.seq;
+    const path = fileRequest.path.replace(/^\.\//, "");
+    setDir(dirnameOf(path));
+    void openFile(path);
+  }, [fileRequest, openFile]);
+
+  return (
+    <div className="dock-files">
+      <div className="dock-files-path">
+        <code>{dir === "." ? "workspace" : dir}</code>
+      </div>
+      <div className="dock-files-list">
+        {listError && <div className="dock-empty">{listError}</div>}
+        {!entries && !listError && <div className="dock-empty">正在读取目录…</div>}
+        {entries && dir !== "." && (
+          <button className="dock-file-row" onClick={() => setDir(dirnameOf(dir))}>▸ ..</button>
+        )}
+        {entries?.map((entry) => (
+          <button
+            key={`${entry.type}:${entry.name}`}
+            className="dock-file-row"
+            data-type={entry.type}
+            onClick={() => {
+              if (entry.type === "dir") {
+                setDir(dir === "." ? entry.name : `${dir}/${entry.name}`);
+              } else {
+                void openFile(dir === "." ? entry.name : `${dir}/${entry.name}`);
+              }
+            }}
+          >
+            <span className="dock-file-mark" aria-hidden="true">{entry.type === "dir" ? "▸" : ""}</span>
+            <span className="dock-file-name">{entry.name}</span>
+            <span className="dock-file-size">{formatSize(entry.size)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="dock-files-preview">
+        {loadingFile && <div className="dock-empty">正在读取文件…</div>}
+        {fileError && <div className="plugin-error-note dock-files-error">{fileError}</div>}
+        {file?.kind === "binary" && <div className="dock-empty">二进制文件不显示内容（{formatSize(file.bytes)}）。</div>}
+        {file?.kind === "text" && (
+          <>
+            <div className="dock-file-head">
+              <code>{file.path}</code>
+              <span>{formatSize(file.bytes)}{file.truncated ? " · 已截断" : ""}</span>
+            </div>
+            <pre className="dock-file-content">{file.content}</pre>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const DOCK_RENDERERS: Record<string, ComponentType<DockRendererProps>> = {
   "workspace-changes": WorkspaceChangesRenderer,
   "guard-audit": GuardAuditRenderer,
   reliability: ReliabilityRenderer,
   "capability-health": CapabilityHealthRenderer,
+  "workspace-files": WorkspaceFilesRenderer,
 };
 
 export function RightDock({
@@ -164,6 +281,7 @@ export function RightDock({
   running,
   tab,
   width,
+  fileRequest,
   onTabChange,
   onWidthChange,
   onClose,
@@ -174,13 +292,17 @@ export function RightDock({
   running: boolean;
   tab: string | null;
   width: number;
+  /** Latest transcript deep-link target, forwarded to the files renderer. */
+  fileRequest?: { path: string; seq: number } | null;
   onTabChange: (tab: string) => void;
   onWidthChange: (width: number) => void;
   onClose: () => void;
 }) {
-  // Tabs mirror the session-header contributions of active plugins.
+  // Tabs: every active plugin contribution that places itself in the dock —
+  // `dock` surface tabs belong here natively, `session-header` tabs open here
+  // from their header buttons.
   const tabs = (capabilities?.uiContributions ?? []).flatMap((contribution) => {
-    if (contribution.surface !== "session-header") return [];
+    if (contribution.surface !== "session-header" && contribution.surface !== "dock") return [];
     const plugin = capabilities?.plugins.find((candidate) => candidate.id === contribution.pluginId);
     const projected = conversation.pluginStates[contribution.pluginId]?.status ?? plugin?.status;
     if (projected === "disabled" || projected === "failed") return [];
@@ -198,6 +320,7 @@ export function RightDock({
         conversation,
         capabilities: capabilities!,
         running,
+        fileRequest,
       },
     }];
   });

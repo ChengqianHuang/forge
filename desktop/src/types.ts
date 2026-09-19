@@ -256,7 +256,8 @@ export interface PluginCapabilitySnapshot {
   uiContributions?: Array<{
     id: string;
     label: string;
-    surface: "session-header";
+    /** `session-header` contributes a header opener; `dock` the dock tab itself. */
+    surface: "session-header" | "dock";
     renderer: string;
     readAction?: string;
     pluginId: string;

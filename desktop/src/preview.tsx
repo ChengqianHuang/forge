@@ -529,7 +529,7 @@ function PreviewPane({ children }: { children: React.ReactNode }) {
 
 if (scene === "dock") {
   // Seed the per-session dock layout so the scene opens docked without clicks.
-  localStorage.setItem("forge.dock.v1.s1", JSON.stringify({ open: true, tab: "workspace-changes", width: 440 }));
+  localStorage.setItem("forge.dock.v1.s1", JSON.stringify({ open: true, tab: params.get("docktab") ?? "workspace-changes", width: 440 }));
   // Mock the capabilities endpoint so dock tabs render without a live sidecar.
   const sampleCapabilities = {
     plugins: [
@@ -537,6 +537,7 @@ if (scene === "dock") {
       { id: "forge.guard-audit", name: "Guard Audit", version: "1.0.0", capabilities: ["ui"], required: true, status: "active" },
       { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["read-action", "ui"], required: true, status: "active" },
       { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "read-action", "ui"], required: false, status: "active" },
+      { id: "forge.workspace-files", name: "Workspace Files", version: "1.0.0", capabilities: ["read-action", "ui"], required: false, status: "active" },
     ],
     slashCommands: [],
     uiContributions: [
@@ -544,6 +545,7 @@ if (scene === "dock") {
       { id: "guard-audit", label: "审计", surface: "session-header", renderer: "guard-audit", pluginId: "forge.guard-audit" },
       { id: "reliability", label: "诊断", surface: "session-header", renderer: "reliability", pluginId: "forge.reliability" },
       { id: "workspace-changes", label: "变更", surface: "session-header", renderer: "workspace-changes", readAction: "diff", pluginId: "forge.workspace-changes" },
+      { id: "workspace-files", label: "文件", surface: "dock", renderer: "workspace-files", pluginId: "forge.workspace-files" },
     ],
   };
   const realFetch = globalThis.fetch.bind(globalThis);
@@ -551,6 +553,31 @@ if (scene === "dock") {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (url.endsWith("/capabilities") && !init?.method) {
       return Promise.resolve(new Response(JSON.stringify(sampleCapabilities), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/read/list") && !init?.method) {
+      const path = new URL(url).searchParams.get("path") ?? ".";
+      const tree: Record<string, Array<{ name: string; type: string; size: number | null }>> = {
+        ".": [
+          { name: "src", type: "dir", size: null },
+          { name: "README.md", type: "file", size: 42 },
+          { name: "package.json", type: "file", size: 613 },
+        ],
+        "src": [
+          { name: "args.ts", type: "file", size: 1240 },
+          { name: "print.ts", type: "file", size: 880 },
+        ],
+      };
+      return Promise.resolve(new Response(JSON.stringify({ path, entries: tree[path] ?? [] }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/read/read") && !init?.method) {
+      const path = new URL(url).searchParams.get("path") ?? "unknown";
+      return Promise.resolve(new Response(JSON.stringify({
+        path,
+        kind: "text",
+        content: `export function parseArgs(argv: string[]) {\n  const json = argv.includes("--json");\n  return { json };\n}\n`,
+        bytes: 1240,
+        truncated: false,
+      }), { status: 200, headers: { "content-type": "application/json" } }));
     }
     if (url.includes("/read/diff") && !init?.method) {
       const path = new URL(url).searchParams.get("path") ?? "unknown";

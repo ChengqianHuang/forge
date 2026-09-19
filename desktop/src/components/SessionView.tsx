@@ -165,6 +165,7 @@ export function SessionView({
   const abort = store((s) => s.abort);
   const resume = store((s) => s.resume);
   const pendingApproval = store((s) => s.pendingApproval);
+  const dockRequest = store((s) => s.dockRequest);
   const [steerInput, setSteerInput] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
   const [resumeMessage, setResumeMessage] = useState("");
@@ -214,6 +215,11 @@ export function SessionView({
       return next;
     });
   const openDockTab = (renderer: string) => updateDock({ open: true, tab: renderer });
+  // A file deep-link from the transcript opens the files tab; the request
+  // object itself is forwarded so the renderer loads the right file.
+  useEffect(() => {
+    if (dockRequest) updateDock({ open: true, tab: "workspace-files" });
+  }, [dockRequest]);
 
   useEffect(() => {
     let alive = true;
@@ -560,6 +566,7 @@ export function SessionView({
           running={running}
           tab={dock.tab}
           width={dock.width}
+          fileRequest={dockRequest}
           onTabChange={(tab) => updateDock({ tab })}
           onWidthChange={(width) => updateDock({ width })}
           onClose={() => updateDock({ open: false })}

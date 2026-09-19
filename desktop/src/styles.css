@@ -1002,3 +1002,41 @@ body.preview-hover .session-del { display: inline-flex; }
 
 /* Keep the wizard's per-file errors visually clear of the action row. */
 .plugin-wizard .plugin-error-note { margin-bottom: 10px; }
+
+/* Workspace files tab in the session dock. */
+.dock-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dock-files-path {
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--text-muted);
+  overflow-x: auto; white-space: nowrap; flex-shrink: 0;
+}
+.dock-files-list { max-height: 38%; overflow-y: auto; border-bottom: 1px solid var(--border); padding: 4px 0; flex-shrink: 0; }
+.dock-file-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 4px 12px; border: none; background: transparent;
+  color: var(--text-secondary); font-family: inherit; font-size: 12px;
+  cursor: pointer; text-align: left;
+}
+.dock-file-row:hover { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.dock-file-mark { width: 10px; color: var(--text-muted); flex-shrink: 0; }
+.dock-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-file-size { font-size: 10.5px; color: var(--text-muted); flex-shrink: 0; }
+.dock-files-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.dock-files-error { padding: 10px 12px; }
+.dock-file-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  padding: 8px 12px 4px; font-size: 11px; color: var(--text-muted);
+  font-family: var(--mono, ui-monospace, monospace); flex-shrink: 0;
+}
+.dock-file-content {
+  flex: 1; min-height: 0; margin: 0; padding: 8px 12px;
+  overflow: auto; white-space: pre;
+  font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; line-height: 1.5;
+  color: var(--text-secondary);
+}
+/* Transcript file links */
+.md .md-file-link {
+  color: var(--accent); cursor: pointer;
+  border-bottom: 1px dotted color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.md .md-file-link:hover { border-bottom-style: solid; }
