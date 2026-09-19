@@ -284,6 +284,86 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
+      // --- User terminals (dock 终端 tab) ---
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts.length === 3) {
+        const body = await readBody(req);
+        try {
+          json(res, 200, await manager.createTerminal(
+            parts[1]!,
+            typeof body.cols === "number" ? body.cols : 80,
+            typeof body.rows === "number" ? body.rows : 24,
+          ));
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "GET" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "stream" && parts.length === 5) {
+        const termId = parts[3]!;
+        if (!manager.terminalExists(parts[1]!, termId)) {
+          json(res, 404, { error: "no such terminal" });
+          return;
+        }
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        res.write(`data: ${JSON.stringify({ type: "open" })}\n\n`);
+        const unsubscribe = manager.subscribeTerminal(parts[1]!, termId, (frame) => {
+          res.write(`data: ${JSON.stringify(frame)}\n\n`);
+        });
+        // Heartbeat keeps proxies from closing an idle terminal stream.
+        const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+        req.on("close", () => {
+          clearInterval(heartbeat);
+          unsubscribe();
+        });
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "input" && parts.length === 5) {
+        const body = await readBody(req);
+        if (typeof body.data !== "string") {
+          json(res, 400, { error: "data must be a string" });
+          return;
+        }
+        try {
+          manager.writeTerminal(parts[1]!, parts[3]!, body.data);
+          json(res, 200, { ok: true });
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "resize" && parts.length === 5) {
+        const body = await readBody(req);
+        try {
+          manager.resizeTerminal(
+            parts[1]!,
+            parts[3]!,
+            typeof body.cols === "number" ? body.cols : 80,
+            typeof body.rows === "number" ? body.rows : 24,
+          );
+          json(res, 200, { ok: true });
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
+      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "exit" && parts.length === 5) {
+        try {
+          manager.exitTerminal(parts[1]!, parts[3]!);
+          json(res, 200, { ok: true });
+        } catch (err) {
+          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        }
+        return;
+      }
+
       // Mid-session model switch. Running: effective at the next turn
       // boundary; idle: persisted for the next resume.
       if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "model") {

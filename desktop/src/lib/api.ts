@@ -101,6 +101,69 @@ export async function setSessionPluginEnabled(id: string, pluginId: string, enab
   await send(`/sessions/${id}/plugins/${encodeURIComponent(pluginId)}`, "POST", { enabled });
 }
 
+// --- user terminals (dock 终端 tab) ---
+
+export async function createTerminal(sessionId: string, cols: number, rows: number): Promise<{ id: string }> {
+  return send(`/sessions/${sessionId}/terminal`, "POST", { cols, rows });
+}
+
+export async function terminalInput(sessionId: string, termId: string, data: string): Promise<void> {
+  await send(`/sessions/${sessionId}/terminal/${termId}/input`, "POST", { data });
+}
+
+export async function terminalResize(sessionId: string, termId: string, cols: number, rows: number): Promise<void> {
+  await send(`/sessions/${sessionId}/terminal/${termId}/resize`, "POST", { cols, rows });
+}
+
+export async function terminalExit(sessionId: string, termId: string): Promise<void> {
+  await send(`/sessions/${sessionId}/terminal/${termId}/exit`, "POST");
+}
+
+/** Follow a terminal's output as SSE. Returns a cancel function; the server
+ * keeps the pty alive across reconnects — the termId is the handle. */
+export function streamTerminal(
+  sessionId: string,
+  termId: string,
+  onFrame: (frame: { type: "data" | "exit"; payload: string }) => void,
+  onEnded: () => void,
+): () => void {
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      const r = await fetch(`${getCfg().baseUrl}/sessions/${sessionId}/terminal/${encodeURIComponent(termId)}/stream`, {
+        headers: headers(),
+        signal: controller.signal,
+      });
+      if (!r.ok || !r.body) throw new Error(`terminal stream → ${r.status}`);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const frame = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const line = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          try {
+            onFrame(JSON.parse(line.slice(6)));
+          } catch {
+            // A malformed frame is dropped, never fatal to the stream.
+          }
+        }
+      }
+    } catch {
+      // Aborted (component unmounted) or network failure — both end the loop.
+    } finally {
+      onEnded();
+    }
+  })();
+  return () => controller.abort();
+}
+
 // --- plugin manager (global) ---
 
 export async function fetchPlugins(): Promise<{

@@ -38,8 +38,9 @@ export interface DesktopState {
   settingsOpen: boolean;
   /** Global plugin manager page occupies the main area while true. */
   pluginsOpen: boolean;
-  /** Latest transcript→dock navigation request (a clicked file path). */
-  dockRequest: { path: string; seq: number } | null;
+  /** Latest transcript→dock navigation request (a clicked file path, with
+   * an optional #L24 / #L24-L30 line range from the code span). */
+  dockRequest: { path: string; lineStart?: number; lineEnd?: number; seq: number } | null;
   /**
    * Registered projects + the active one. Lifted out of Sidebar-local state so
    * a new session is created against the project the user actually picked
@@ -69,7 +70,7 @@ export interface DesktopState {
   toggleTheme: () => void;
   setSettingsOpen: (open: boolean) => void;
   setPluginsOpen: (open: boolean) => void;
-  requestDockFile: (path: string) => void;
+  requestDockFile: (path: string, lineStart?: number, lineEnd?: number) => void;
   resetConversation: () => void;
 }
 
@@ -822,7 +823,16 @@ export const store = create<DesktopState>((set, get) => ({
   setPluginsOpen: (open) => set({ pluginsOpen: open }),
 
   // A monotonic seq so repeat clicks on the same path re-trigger the effect.
-  requestDockFile: (path) => set({ dockRequest: { path, seq: Date.now() } }),
+  requestDockFile: (path, lineStart, lineEnd) =>
+    set((current) => ({
+      dockRequest: {
+        path,
+        ...(lineStart !== undefined ? { lineStart } : {}),
+        ...(lineEnd !== undefined ? { lineEnd } : {}),
+        seq: Date.now(),
+        ...(current.dockRequest ? {} : {}),
+      },
+    })),
 
   resetConversation: () => set({ conversation: emptyConversation() }),
 }));

@@ -69,6 +69,7 @@ import type { PluginCapabilitySnapshot, PluginCatalogEntry } from "../plugins/ty
 import { projectPluginCapabilities, userDisabledPluginIds } from "../plugins/state.ts";
 import { resolvePluginConfig, validateConfigInput } from "../plugins/config-schema.ts";
 import { loadPluginPreferences, savePluginPreferences } from "./plugin-preferences.ts";
+import { TerminalManager } from "./terminal-manager.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 import { externalPluginsDir, inspectPluginSource, installPluginFiles, cleanupStaging, type PluginSourceInfo } from "./plugin-install.ts";
 import { readdir, unlink } from "node:fs/promises";
@@ -159,6 +160,7 @@ export class SessionManager {
    */
   private runtimes = new Map<string, SessionRuntime>();
   private readonly plugins: PluginRegistry;
+  private readonly terminals = new TerminalManager();
   private readonly externalPluginIds: Set<string>;
   /** pluginId → file name inside <forgeHome>/plugins, for uninstall. */
   private readonly externalFiles = new Map<string, string>();
@@ -648,6 +650,40 @@ export class SessionManager {
     return { ok: true };
   }
 
+  // --- user terminals (dock 终端 tab; outside the guardrails by design) ---
+
+  async createTerminal(sessionId: string, cols: number, rows: number): Promise<{ id: string }> {
+    // The terminal is a user surface that outlives runs: idle sessions are
+    // loaded from disk, not only the live runtime map.
+    const session = this.runtimes.get(sessionId)?.session ?? await loadSession(sessionId);
+    if (!session) throw new Error(`session ${sessionId} not found`);
+    return this.terminals.create(sessionId, session.workspace, cols, rows);
+  }
+
+  terminalExists(sessionId: string, termId: string): boolean {
+    return this.terminals.exists(sessionId, termId);
+  }
+
+  subscribeTerminal(
+    sessionId: string,
+    termId: string,
+    listener: (frame: { type: "data" | "exit"; payload: string }) => void,
+  ): () => void {
+    return this.terminals.subscribe(sessionId, termId, listener);
+  }
+
+  writeTerminal(sessionId: string, termId: string, data: string): void {
+    this.terminals.write(sessionId, termId, data);
+  }
+
+  resizeTerminal(sessionId: string, termId: string, cols: number, rows: number): void {
+    this.terminals.resize(sessionId, termId, cols, rows);
+  }
+
+  exitTerminal(sessionId: string, termId: string): void {
+    this.terminals.exit(sessionId, termId);
+  }
+
   /** Registration-time catalog for the global plugin manager page, plus the
    * per-file failures of the external plugin directory. */
   async pluginCatalog(): Promise<{
@@ -800,6 +836,7 @@ export class SessionManager {
 
   /** Stop live runs and dispose session-scoped plugins during server shutdown. */
   async shutdown(): Promise<void> {
+    this.terminals.killAll();
     const runtimes = [...this.runtimes.values()];
     for (const runtime of runtimes) {
       this.requestStop(runtime.session.id, runtime, "server-shutdown");
@@ -825,6 +862,7 @@ export class SessionManager {
     if (this.runtimes.has(sessionId)) {
       return { ok: false, message: "session is running — abort it first" };
     }
+    this.terminals.killSession(sessionId);
     await removeSession(sessionId);
     // Event log and undo journal are retained deliberately: audit trail.
     return { ok: true, message: "deleted" };

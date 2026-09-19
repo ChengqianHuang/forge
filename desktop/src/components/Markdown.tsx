@@ -23,12 +23,15 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
           code(props) {
             const { className, children } = props;
             const raw = String(children ?? "").replace(/^\.\//, "");
-            if (!className && looksLikeWorkspacePath(raw)) {
+            const match = /^([^#]+)(#L(\d+)(?:-L(\d+))?)?$/.exec(raw);
+            if (!className && match && looksLikeWorkspacePath(match[1]!)) {
+              const lineStart = match[3] !== undefined ? Number(match[3]) : undefined;
+              const lineEnd = match[4] !== undefined ? Number(match[4]) : lineStart;
               return (
                 <code
                   className="md-file-link"
-                  title="在会话工作区中打开"
-                  onClick={() => store.getState().requestDockFile(raw)}
+                  title={lineStart !== undefined ? `在会话工作区中打开（跳到第 ${lineStart} 行）` : "在会话工作区中打开"}
+                  onClick={() => store.getState().requestDockFile(match[1]!, lineStart, lineEnd)}
                 >
                   {children}
                 </code>

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
-import { readCapability, setSessionPluginEnabled } from "../lib/api.ts";
+// xterm's structural CSS: without it the width-measure helper row renders
+// inline as visible glyph garbage.
+import "@xterm/xterm/css/xterm.css";
+import { readCapability, setSessionPluginEnabled, createTerminal, streamTerminal, terminalExit, terminalInput, terminalResize } from "../lib/api.ts";
 import { store } from "../lib/store.ts";
 import type {
   ConversationView,
@@ -62,8 +65,9 @@ type DockRendererProps = {
   conversation: ConversationView;
   capabilities: PluginCapabilitySnapshot;
   running: boolean;
-  /** Transcript deep-link: the latest requested file path (monotonic seq). */
-  fileRequest?: { path: string; seq: number } | null;
+  /** Transcript deep-link: the latest requested file path with an optional
+   * #L24 / #L24-L30 line range (monotonic seq). */
+  fileRequest?: { path: string; lineStart?: number; lineEnd?: number; seq: number } | null;
 };
 
 function WorkspaceChangesRenderer({ sessionId, pluginId, readAction, conversation }: DockRendererProps) {
@@ -178,6 +182,8 @@ function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRender
   const [listError, setListError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
+  const [highlight, setHighlight] = useState<{ start: number; end: number } | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const lastSeq = useRef(-1);
 
   useEffect(() => {
@@ -209,14 +215,27 @@ function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRender
     }
   }, [sessionId, pluginId]);
 
-  // Transcript deep links: navigate to the file's directory and load it.
+  // Transcript deep links: navigate to the file's directory, load it, and
+  // highlight + scroll to the requested line range if present.
   useEffect(() => {
     if (!fileRequest || fileRequest.seq === lastSeq.current) return;
     lastSeq.current = fileRequest.seq;
     const path = fileRequest.path.replace(/^\.\//, "");
     setDir(dirnameOf(path));
+    setHighlight(
+      fileRequest.lineStart !== undefined
+        ? { start: fileRequest.lineStart, end: fileRequest.lineEnd ?? fileRequest.lineStart }
+        : null,
+    );
     void openFile(path);
   }, [fileRequest, openFile]);
+
+  // After the highlighted file renders, bring the range into view.
+  useEffect(() => {
+    if (!file || !highlight) return;
+    const el = previewRef.current?.querySelector(`[data-line="${highlight.start}"]`);
+    el?.scrollIntoView({ block: "center" });
+  }, [file, highlight]);
 
   return (
     <div className="dock-files">
@@ -252,7 +271,28 @@ function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRender
         {loadingFile && <div className="dock-empty">正在读取文件…</div>}
         {fileError && <div className="plugin-error-note dock-files-error">{fileError}</div>}
         {file?.kind === "binary" && <div className="dock-empty">二进制文件不显示内容（{formatSize(file.bytes)}）。</div>}
-        {file?.kind === "text" && (
+        {file?.kind === "text" && highlight && (
+          <>
+            <div className="dock-file-head">
+              <code>{file.path}</code>
+              <span>{formatSize(file.bytes)}{file.truncated ? " · 已截断" : ""} · L{highlight.start}{highlight.end !== highlight.start ? `-L${highlight.end}` : ""}</span>
+            </div>
+            <div className="dock-file-content dock-file-numbered" ref={previewRef}>
+              {file.content.split("\n").map((line, index) => (
+                <div
+                  key={index}
+                  className="dock-file-line"
+                  data-line={index + 1}
+                  data-highlight={index + 1 >= highlight.start && index + 1 <= highlight.end || undefined}
+                >
+                  <span className="dock-file-line-no">{index + 1}</span>
+                  <span className="dock-file-line-text">{line || " "}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {file?.kind === "text" && !highlight && (
           <>
             <div className="dock-file-head">
               <code>{file.path}</code>
@@ -266,12 +306,161 @@ function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRender
   );
 }
 
+/** The dock's 终端 tab: a real pty (node-pty server-side) rendered with
+ * xterm.js. The pty persists across UI reloads — the saved termId is the
+ * reconnect handle; a dead one surfaces a restart affordance instead of a
+ * silently dead pane. This is a USER surface, outside the guardrails by
+ * design (same trust as the user's own terminal app). */
+function TerminalRenderer({ sessionId }: DockRendererProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [status, setStatus] = useState<"boot" | "live" | "ended" | "error">("boot");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [restartSeq, setRestartSeq] = useState(0);
+
+  useEffect(() => {
+    let disposed = false;
+    let cancelStream: (() => void) | null = null;
+    let cleanupResize: (() => void) | null = null;
+    let term: { dispose: () => void } | null = null;
+    setStatus("boot");
+    setErrorMessage(null);
+
+    (async () => {
+      try {
+        const [{ Terminal }, { FitAddon }] = await Promise.all([
+          import("@xterm/xterm"),
+          import("@xterm/addon-fit"),
+        ]);
+        if (disposed || !containerRef.current) return;
+        const xterm = new Terminal({
+          fontSize: 11,
+          // A concrete stack: xterm measures glyphs on canvas, where CSS var() is invalid.
+          fontFamily: "ui-monospace, Menlo, Monaco, monospace",
+          cursorBlink: true,
+          theme: {
+            background: "#111214",
+            foreground: "#d6d6d6",
+            cursor: "#6ea6ff",
+          },
+        });
+        const fit = new FitAddon();
+        xterm.loadAddon(fit);
+        xterm.open(containerRef.current);
+        term = xterm;
+        try {
+          fit.fit();
+        } catch {
+          // fit can throw on a zero-size container before layout settles;
+          // the resize observer below fits again once real dimensions exist.
+        }
+        const cols = xterm.cols || 80;
+        const rows = xterm.rows || 24;
+
+        let termId = localStorage.getItem(`forge.terminal.v1.${sessionId}`) ?? "";
+        if (!termId) {
+          const created = await createTerminal(sessionId, cols, rows);
+          termId = created.id;
+          localStorage.setItem(`forge.terminal.v1.${sessionId}`, termId);
+        }
+
+        xterm.onData((data) => void terminalInput(sessionId, termId, data));
+
+        const refit = () => {
+          try {
+            fit.fit();
+            void terminalResize(sessionId, termId, xterm.cols, xterm.rows);
+          } catch {
+            // Container not measurable yet; next resize event retries.
+          }
+        };
+        const observer = new ResizeObserver(() => refit());
+        observer.observe(containerRef.current);
+        cleanupResize = () => observer.disconnect();
+
+        cancelStream = streamTerminal(
+          sessionId,
+          termId,
+          (frame) => {
+            if (disposed) return;
+            if (frame.type === "data") {
+              setStatus("live");
+              xterm.write(frame.payload);
+            } else {
+              setStatus("ended");
+            }
+          },
+          () => {
+            // Stream ended (network or process gone). If nothing ever wrote,
+            // the pty is dead — offer restart instead of a frozen pane.
+            if (!disposed) setStatus((current) => (current === "live" ? "ended" : "ended"));
+          },
+        );
+        setStatus("live");
+      } catch (err) {
+        if (!disposed) {
+          setErrorMessage(err instanceof Error ? err.message : String(err));
+          setStatus("error");
+        }
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      cancelStream?.();
+      cleanupResize?.();
+      // Without this, React's double mount (StrictMode) stacks two renderers
+      // in the same container and the pane shows glyph garbage.
+      term?.dispose();
+    };
+  }, [sessionId, restartSeq]);
+
+  async function restart() {
+    const saved = localStorage.getItem(`forge.terminal.v1.${sessionId}`);
+    if (saved) {
+      await terminalExit(sessionId, saved).catch(() => {});
+      localStorage.removeItem(`forge.terminal.v1.${sessionId}`);
+    }
+    setRestartSeq((n) => n + 1);
+  }
+
+  return (
+    <div className="dock-terminal">
+      <div className="dock-terminal-bar">
+        <span className="dock-terminal-title">会话终端</span>
+        <span className="dock-tabs-spacer" />
+        <button
+          className={`dock-terminal-restart ${status === "ended" || status === "error" ? "is-attention" : ""}`}
+          onClick={() => void restart()}
+          title="结束当前 shell 并重新启动"
+        >
+          重启
+        </button>
+      </div>
+      <div className="dock-terminal-body" ref={containerRef} data-status={status} />
+      {status === "boot" && <div className="dock-terminal-overlay">正在连接终端…</div>}
+      {status === "ended" && (
+        <div className="dock-terminal-overlay">
+          <span>终端已结束。</span>
+          <button className="btn btn-ghost btn-small" onClick={() => void restart()}>重启</button>
+        </div>
+      )}
+      {status === "error" && (
+        <div className="dock-terminal-overlay">
+          <span className="plugin-error-note">{errorMessage}</span>
+          <button className="btn btn-ghost btn-small" onClick={() => void restart()}>重试</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DOCK_RENDERERS: Record<string, ComponentType<DockRendererProps>> = {
   "workspace-changes": WorkspaceChangesRenderer,
   "guard-audit": GuardAuditRenderer,
   reliability: ReliabilityRenderer,
   "capability-health": CapabilityHealthRenderer,
   "workspace-files": WorkspaceFilesRenderer,
+  terminal: TerminalRenderer,
 };
 
 export function RightDock({
@@ -324,7 +513,19 @@ export function RightDock({
       },
     }];
   });
-  const active = tabs.find((t) => t.renderer === tab) ?? tabs[0];
+  // The built-in terminal is a kernel surface (needs pty server routes, which
+  // read-action plugins cannot declare), so it is not a plugin contribution.
+  const tabsWithTerminal = [
+    ...tabs,
+    {
+      key: "builtin:terminal",
+      renderer: "terminal",
+      label: "终端",
+      Renderer: DOCK_RENDERERS.terminal!,
+      props: { sessionId, pluginId: "", conversation, capabilities: capabilities!, running, fileRequest },
+    },
+  ];
+  const active = tabsWithTerminal.find((t) => t.renderer === tab) ?? tabsWithTerminal[0];
 
   // Width drag: pointer capture on the left edge handle, clamped.
   const draggingRef = useRef(false);
@@ -357,7 +558,7 @@ export function RightDock({
       />
       <div className="dock-inner">
         <div className="dock-tabs" role="tablist" aria-label="会话工作区">
-          {tabs.map((t) => (
+          {tabsWithTerminal.map((t) => (
             <button
               key={t.key}
               role="tab"

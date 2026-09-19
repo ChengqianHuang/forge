@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { store, reduceEnvelope } from "./lib/store.ts";
+import type * as StoreModule from "./lib/store.ts";
 import { initClient } from "./lib/api.ts";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SessionView } from "./components/SessionView.tsx";
@@ -554,6 +555,25 @@ if (scene === "dock") {
     if (url.endsWith("/capabilities") && !init?.method) {
       return Promise.resolve(new Response(JSON.stringify(sampleCapabilities), { status: 200, headers: { "content-type": "application/json" } }));
     }
+    if (url.match(/\/terminal$/)&& init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({ id: "term-preview-1" }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/terminal/") && url.includes("/input") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/terminal/") && url.includes("/resize") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/terminal/") && url.includes("/stream") && !init?.method) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          const banner = "Forge preview shell — 输入命令回车执行\r\n$ ";
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "data", payload: banner })}\n\n`));
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }));
+    }
     if (url.includes("/read/list") && !init?.method) {
       const path = new URL(url).searchParams.get("path") ?? ".";
       const tree: Record<string, Array<{ name: string; type: string; size: number | null }>> = {
@@ -605,6 +625,11 @@ if (scene === "dock") {
     return realFetch(input, init);
   };
 }
+
+// Dev harness handle: lets probe scripts drive store actions (e.g. a
+// transcript file deep-link) without clicking through the UI.
+(window as unknown as { __forge_store?: StoreModule.DesktopState & { requestDockFile: (path: string, a?: number, b?: number) => void } }).__forge_store =
+  store.getState() as never;
 
 createRoot(document.getElementById("root")!).render(
   <>

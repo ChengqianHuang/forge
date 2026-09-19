@@ -1040,3 +1040,39 @@ body.preview-hover .session-del { display: inline-flex; }
   border-bottom: 1px dotted color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .md .md-file-link:hover { border-bottom-style: solid; }
+
+/* Numbered file preview with a highlighted deep-link range. */
+.dock-file-numbered { padding: 4px 0; }
+.dock-file-line { display: flex; align-items: flex-start; }
+.dock-file-line[data-highlight] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.dock-file-line-no {
+  width: 44px; flex-shrink: 0; text-align: right; padding-right: 10px;
+  color: var(--text-muted); opacity: 0.7; user-select: none;
+}
+.dock-file-line-text { flex: 1; white-space: pre-wrap; word-break: break-all; padding-right: 12px; }
+
+/* Terminal tab: xterm container. The terminal itself stays dark in both
+   themes (terminal convention); the chrome follows the dock. */
+.dock-terminal { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dock-terminal-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.dock-terminal-title { font-size: 11px; color: var(--text-muted); }
+.dock-terminal-restart {
+  padding: 2px 8px; border: 1px solid var(--border-strong); border-radius: 4px;
+  background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px;
+}
+.dock-terminal-restart:hover { color: var(--text); }
+.dock-terminal-restart.is-attention { border-color: var(--accent); color: var(--accent); }
+.dock-terminal-body {
+  flex: 1; min-height: 0; padding: 4px 6px;
+  background: #111214; overflow: hidden;
+}
+.dock-terminal-body .xterm { height: 100%; }
+.dock-terminal-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  background: rgba(17, 18, 20, 0.85); color: var(--text-secondary); font-size: 12.5px;
+}
+.dock-terminal { position: relative; }
