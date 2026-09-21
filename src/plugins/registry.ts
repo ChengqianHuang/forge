@@ -5,6 +5,8 @@ import type {
   ForgePlugin,
   PluginCapabilitySnapshot,
   PluginHooks,
+  PluginInteractionContext,
+  PluginInteractionFrame,
   PluginInstance,
   PluginManifest,
   PluginReadContext,
@@ -59,9 +61,13 @@ export class PluginRegistry {
   /** Remove an external plugin from the catalog. Sessions that already
    * activated it keep their live instance until disposal; the next activation
    * no longer sees it. */
-  unregister(pluginId: string): void {
-    if (!this.plugins.delete(pluginId)) {
+  async unregister(pluginId: string): Promise<void> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin || !this.plugins.delete(pluginId)) {
       throw new Error(`plugin is not registered: ${pluginId}`);
+    }
+    if (plugin.dispose) {
+      await within(Promise.resolve(plugin.dispose()), this.timeoutMs, `${pluginId}.unregister`);
     }
   }
 
@@ -85,6 +91,27 @@ export class PluginRegistry {
     }
     if (actionIds.size > 0 && !plugin.read) {
       throw new Error(`plugin ${plugin.manifest.id} declares read actions without a read handler`);
+    }
+    const interactionIds = new Set<string>();
+    let hasRequestInteraction = false;
+    let hasStreamInteraction = false;
+    for (const interaction of plugin.manifest.interactions ?? []) {
+      if (
+        !/^[a-z0-9][a-z0-9_-]*$/.test(interaction.id) ||
+        interactionIds.has(interaction.id) ||
+        (interaction.kind !== "request" && interaction.kind !== "stream")
+      ) {
+        throw new Error(`invalid or duplicate interaction: ${plugin.manifest.id}/${interaction.id}`);
+      }
+      interactionIds.add(interaction.id);
+      if (interaction.kind === "request") hasRequestInteraction = true;
+      if (interaction.kind === "stream") hasStreamInteraction = true;
+    }
+    if (hasRequestInteraction && !plugin.interact) {
+      throw new Error(`plugin ${plugin.manifest.id} declares request interactions without an interact handler`);
+    }
+    if (hasStreamInteraction && !plugin.subscribe) {
+      throw new Error(`plugin ${plugin.manifest.id} declares stream interactions without a subscribe handler`);
     }
     for (const contribution of plugin.manifest.ui ?? []) {
       if (contribution.readAction && !actionIds.has(contribution.readAction)) {
@@ -123,6 +150,13 @@ export class PluginRegistry {
     if (!declared.has("read-action") && hasReadActions) {
       throw new Error(`plugin ${plugin.manifest.id} declares read actions without the "read-action" capability`);
     }
+    const hasInteractions = interactionIds.size > 0;
+    if (declared.has("interaction") && !hasInteractions) {
+      throw new Error(`plugin ${plugin.manifest.id} declares capability "interaction" without any interaction`);
+    }
+    if (!declared.has("interaction") && hasInteractions) {
+      throw new Error(`plugin ${plugin.manifest.id} declares interactions without the "interaction" capability`);
+    }
     // A malformed schema must never reach the manager UI, which renders forms
     // straight from it.
     validateConfigSchema(plugin.manifest.configSchema, plugin.manifest.id);
@@ -148,6 +182,67 @@ export class PluginRegistry {
       `${pluginId}.read:${actionId}`,
       () => timeoutController.abort(new Error(`${pluginId}.read:${actionId} timed out`)),
     );
+  }
+
+  async interact(
+    pluginId: string,
+    actionId: string,
+    input: Record<string, unknown>,
+    context: PluginInteractionContext,
+  ): Promise<unknown> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    const action = plugin.manifest.interactions?.find((candidate) => candidate.id === actionId);
+    if (action?.kind !== "request" || !plugin.interact) {
+      throw new Error(`unknown request interaction: ${pluginId}/${actionId}`);
+    }
+    const timeoutController = new AbortController();
+    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
+    return within(
+      Promise.resolve(plugin.interact(actionId, input, { ...context, signal })),
+      this.timeoutMs,
+      `${pluginId}.interact:${actionId}`,
+      () => timeoutController.abort(new Error(`${pluginId}.interact:${actionId} timed out`)),
+    );
+  }
+
+  async subscribe(
+    pluginId: string,
+    actionId: string,
+    input: Record<string, unknown>,
+    context: PluginInteractionContext,
+    emit: (frame: PluginInteractionFrame) => void,
+  ): Promise<() => void> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) throw new Error(`unknown plugin: ${pluginId}`);
+    const action = plugin.manifest.interactions?.find((candidate) => candidate.id === actionId);
+    if (action?.kind !== "stream" || !plugin.subscribe) {
+      throw new Error(`unknown stream interaction: ${pluginId}/${actionId}`);
+    }
+    const timeoutController = new AbortController();
+    const signal = AbortSignal.any([context.signal, timeoutController.signal]);
+    return within(
+      Promise.resolve(plugin.subscribe(actionId, input, { ...context, signal }, emit)),
+      this.timeoutMs,
+      `${pluginId}.subscribe:${actionId}`,
+      () => timeoutController.abort(new Error(`${pluginId}.subscribe:${actionId} timed out`)),
+    );
+  }
+
+  async disposeSession(sessionId: string): Promise<void> {
+    await Promise.allSettled([...this.plugins.values()].map((plugin) =>
+      plugin.disposeSession
+        ? within(Promise.resolve().then(() => plugin.disposeSession!(sessionId)), this.timeoutMs, `${plugin.manifest.id}.disposeSession`)
+        : Promise.resolve(),
+    ));
+  }
+
+  async dispose(): Promise<void> {
+    await Promise.allSettled([...this.plugins.values()].reverse().map((plugin) =>
+      plugin.dispose
+        ? within(Promise.resolve().then(() => plugin.dispose!()), this.timeoutMs, `${plugin.manifest.id}.dispose`)
+        : Promise.resolve(),
+    ));
   }
 
   capabilities(status: PluginRuntimeStatus = "disposed"): PluginCapabilitySnapshot {
@@ -511,6 +606,30 @@ export class PluginHost {
         required: state.manifest.required === true,
         reason: "disabled by user",
       });
+      const plugin = this.registry?.plugin(pluginId);
+      if (plugin?.disposeSession) {
+        try {
+          await within(
+            Promise.resolve(plugin.disposeSession(this.context.session.id)),
+            this.timeoutMs,
+            `${pluginId}.disable-disposeSession`,
+          );
+        } catch (error) {
+          this.failed.add(pluginId);
+          state.status = "failed";
+          state.failurePhase = "disable-disposeSession";
+          state.failureReason = error instanceof Error ? error.message : String(error);
+          await this.context.emitEvent("PLUGIN_FAILED", {
+            pluginId,
+            required: state.manifest.required === true,
+            phase: "disable-disposeSession",
+            reason: state.failureReason,
+          }).catch(() => {});
+          const instance = this.instances.get(pluginId);
+          if (instance) await this.disposeInstance(pluginId, instance, "failure-cleanup");
+          throw error;
+        }
+      }
     }
   }
 

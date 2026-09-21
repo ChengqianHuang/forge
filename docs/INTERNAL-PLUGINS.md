@@ -23,6 +23,7 @@ supports:
 - agent-event subscribers;
 - session-scoped services;
 - stateless, user-initiated read actions;
+- stateful user interactions (bounded requests plus long-lived streams);
 - small capability descriptors consumed by the desktop.
 
 UI descriptors declare a stable contribution id, label, surface and renderer
@@ -37,25 +38,37 @@ without installing their handler. Read actions are stateless inspection, not a
 second plugin runtime: they remain available for a terminal session after its
 runtime instance is disposed, run under a timeout and receive an abort signal.
 
+Stateful interactions are a separate, honest seam. A manifest declares
+`request` and `stream` actions; generic capability HTTP routes dispatch them to
+`interact` and `subscribe`. They may outlive an agent run. `disposeSession`
+releases resources when the user deletes a session, and plugin-level `dispose`
+releases all remaining resources during server shutdown. The registry owns
+routing and bounded setup; the plugin owns payload validation and resource
+semantics. Disabling an optional capability for a live session also invokes
+its session cleanup before it can be enabled again.
+
 Registration is explicit in `src/plugins/builtins/index.ts`. TypeScript is the
 contract; internal modules do not need compatibility or deprecation machinery.
 
 `capabilities` is the set a host filters on when activating a plugin, while the
-manifest's `slashCommands`, `ui` and `readActions` arrays are projected to
+manifest's `slashCommands`, `ui`, `readActions` and `interactions` arrays are projected to
 consumers *before* activation. The two must agree, so the registry rejects a
 manifest that declares `ui` with no UI contribution, contributes UI without
 declaring `ui`, declares `read-action` with no read action, contributes read
-actions without declaring `read-action`, or declares slash commands without the
-`slash-command` capability. Contributions that only exist after `activate()`
+actions without declaring `read-action`, declares interactions without their
+request/stream handlers, or declares slash commands without the `slash-command`
+capability. Contributions that only exist after `activate()`
 (tools, hooks, event subscribers) cannot be checked statically — there, a
 declaration is a claim the author has to keep true. Declarations are
 user-visible, because the capability panel renders them: an over-declaration is
 a defect, not untidiness.
 
 The words are `tool`, `guardrail`, `event-subscriber`, `slash-command`,
-`read-action` and `ui`. `read-action` covers the stateless inspection surface
+`read-action`, `interaction` and `ui`. `read-action` covers the stateless inspection surface
 (`readActions` + a `read` handler); without it, a plugin whose only contribution
 is inspection had nothing to declare and no host could select that surface.
+`interaction` covers manifest-declared stateful request/stream actions and is
+kept distinct so an open stream is never misrepresented as a bounded read.
 
 Every manifest is either required or optional. Required means “not user
 disableable”, not “incapable of failure”: Forge still reports and isolates a
@@ -200,6 +213,20 @@ with its original byte count and truncation marker. The result is a live
 working-tree view, not historical evidence; the persisted
 `WORKSPACE_CHANGES` snapshot remains the durable session projection.
 
+### Session terminal
+
+The optional `forge.terminal` capability is the first stateful interaction
+client. Its manifest contributes the dock tab plus `create`, `input`, `resize`,
+`exit` request actions and an `output` stream. The generic capability routes
+carry all five; `SessionManager`, the HTTP router and `RightDock` contain no
+terminal-specific route or synthetic tab.
+
+The PTY is controlled directly by the user and therefore sits outside agent
+tool approvals, like opening the operating system terminal. Its process may
+survive an SSE reconnect, but is killed on explicit exit, session deletion or
+server shutdown. Terminal bytes are intentionally transient and are not copied
+into the agent event log.
+
 ### MCP tools
 
 MCP is an integration transport, not an external Forge-plugin ecosystem.
@@ -225,7 +252,7 @@ restarts. Hot replacement is not implemented.
 
 The generated [`capability-seams.md`](capability-seams.md) is the machine-checked
 map of every capability's runtime contributions (hooks through the kernel
-multiplexer, tools, commands, services, read actions, UI surfaces, config
+multiplexer, tools, commands, services, read actions, interactions, UI surfaces, config
 keys), the full seam inventory of the plugin contract, and the routing table
 that answers "where does new behavior attach" with its boundary constraint.
 Regenerate with `npm run gen:seams`; the release gate fails when it is stale.

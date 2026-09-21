@@ -101,40 +101,39 @@ export async function setSessionPluginEnabled(id: string, pluginId: string, enab
   await send(`/sessions/${id}/plugins/${encodeURIComponent(pluginId)}`, "POST", { enabled });
 }
 
-// --- user terminals (dock 终端 tab) ---
-
-export async function createTerminal(sessionId: string, cols: number, rows: number): Promise<{ id: string }> {
-  return send(`/sessions/${sessionId}/terminal`, "POST", { cols, rows });
-}
-
-export async function terminalInput(sessionId: string, termId: string, data: string): Promise<void> {
-  await send(`/sessions/${sessionId}/terminal/${termId}/input`, "POST", { data });
-}
-
-export async function terminalResize(sessionId: string, termId: string, cols: number, rows: number): Promise<void> {
-  await send(`/sessions/${sessionId}/terminal/${termId}/resize`, "POST", { cols, rows });
-}
-
-export async function terminalExit(sessionId: string, termId: string): Promise<void> {
-  await send(`/sessions/${sessionId}/terminal/${termId}/exit`, "POST");
-}
-
-/** Follow a terminal's output as SSE. Returns a cancel function; the server
- * keeps the pty alive across reconnects — the termId is the handle. */
-export function streamTerminal(
+/** Dispatch a stateful user request through a capability-owned action. */
+export async function interactCapability<T>(
   sessionId: string,
-  termId: string,
-  onFrame: (frame: { type: "data" | "exit"; payload: string }) => void,
+  pluginId: string,
+  actionId: string,
+  input: Record<string, unknown>,
+): Promise<T> {
+  return send(
+    `/sessions/${sessionId}/capabilities/${encodeURIComponent(pluginId)}/interact/${encodeURIComponent(actionId)}`,
+    "POST",
+    input,
+  );
+}
+
+/** Follow a capability-owned SSE stream. Returns a subscription canceler; the
+ * plugin decides whether its underlying resource survives reconnection. */
+export function streamCapability<T extends Record<string, unknown>>(
+  sessionId: string,
+  pluginId: string,
+  actionId: string,
+  input: Record<string, string>,
+  onFrame: (frame: T) => void,
   onEnded: () => void,
 ): () => void {
   const controller = new AbortController();
   void (async () => {
     try {
-      const r = await fetch(`${getCfg().baseUrl}/sessions/${sessionId}/terminal/${encodeURIComponent(termId)}/stream`, {
+      const query = new URLSearchParams(input);
+      const r = await fetch(`${getCfg().baseUrl}/sessions/${sessionId}/capabilities/${encodeURIComponent(pluginId)}/stream/${encodeURIComponent(actionId)}?${query}`, {
         headers: headers(),
         signal: controller.signal,
       });
-      if (!r.ok || !r.body) throw new Error(`terminal stream → ${r.status}`);
+      if (!r.ok || !r.body) throw new Error(`capability stream → ${r.status}`);
       const reader = r.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -149,7 +148,7 @@ export function streamTerminal(
           const line = frame.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
           try {
-            onFrame(JSON.parse(line.slice(6)));
+            onFrame(JSON.parse(line.slice(6)) as T);
           } catch {
             // A malformed frame is dropped, never fatal to the stream.
           }

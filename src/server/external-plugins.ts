@@ -8,8 +8,8 @@ import type { ForgePlugin } from "../plugins/types.ts";
  * ESM module in
  * `<forgeHome>/plugins/*.plugin.{ts,js,mjs}` whose **default export** is a
  * `ForgePlugin` — the same shape compiled-in plugins use, so the manifest
- * (id/name/version/capabilities/configSchema), activate(), read() and the
- * global enablement/config preferences all work identically.
+ * (id/name/version/capabilities/configSchema), activation, read/interaction
+ * handlers, lifecycle cleanup and global preferences all work identically.
  *
  * Loading is fail-isolated per file: a broken module, a malformed manifest or
  * an id collision can never take the server down; the failure is reported to

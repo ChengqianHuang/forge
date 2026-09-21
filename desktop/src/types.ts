@@ -225,6 +225,7 @@ export interface PluginCatalogEntryView {
   slashCommands?: Array<{ name: string; description: string }>;
   ui?: Array<{ id: string; label: string; surface: string; renderer: string; readAction?: string }>;
   readActions?: Array<{ id: string; description: string }>;
+  interactions?: Array<{ id: string; description: string; kind: "request" | "stream" }>;
   configSchema?: PluginConfigFieldView[];
   /** Compiled-in vs loaded from `<forgeHome>/plugins` at server start. */
   source: "builtin" | "external";

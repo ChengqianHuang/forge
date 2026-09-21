@@ -199,6 +199,72 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         return;
       }
 
+      if (
+        req.method === "POST" &&
+        parts[0] === "sessions" &&
+        parts[2] === "capabilities" &&
+        parts[4] === "interact" &&
+        parts.length === 6
+      ) {
+        const body = await readBody(req);
+        try {
+          json(res, 200, await manager.interactCapability(
+            parts[1]!,
+            parts[3]!,
+            parts[5]!,
+            body,
+            new AbortController().signal,
+          ));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /not found|unknown plugin|unknown request interaction/i.test(message) ? 404 : 409, { error: message });
+        }
+        return;
+      }
+
+      if (
+        req.method === "GET" &&
+        parts[0] === "sessions" &&
+        parts[2] === "capabilities" &&
+        parts[4] === "stream" &&
+        parts.length === 6
+      ) {
+        const controller = new AbortController();
+        try {
+          let opened = false;
+          const pendingFrames: Record<string, unknown>[] = [];
+          const unsubscribe = await manager.subscribeCapability(
+            parts[1]!,
+            parts[3]!,
+            parts[5]!,
+            Object.fromEntries(url.searchParams.entries()),
+            controller.signal,
+            (frame) => {
+              if (opened) res.write(`data: ${JSON.stringify(frame)}\n\n`);
+              else pendingFrames.push(frame);
+            },
+          );
+          res.writeHead(200, {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+          });
+          opened = true;
+          res.write(`data: ${JSON.stringify({ type: "open" })}\n\n`);
+          for (const frame of pendingFrames) res.write(`data: ${JSON.stringify(frame)}\n\n`);
+          const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+          req.on("close", () => {
+            clearInterval(heartbeat);
+            controller.abort();
+            unsubscribe();
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          json(res, /not found|unknown plugin|unknown stream interaction/i.test(message) ? 404 : 409, { error: message });
+        }
+        return;
+      }
+
       if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "plugins" && parts.length === 4) {
         const body = await readBody(req);
         if (typeof body.enabled !== "boolean") {
@@ -279,86 +345,6 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           json(res, /unknown plugin/i.test(message) ? 404 : 400, { error: message });
-        }
-        return;
-      }
-
-      // --- User terminals (dock 终端 tab) ---
-      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts.length === 3) {
-        const body = await readBody(req);
-        try {
-          json(res, 200, await manager.createTerminal(
-            parts[1]!,
-            typeof body.cols === "number" ? body.cols : 80,
-            typeof body.rows === "number" ? body.rows : 24,
-          ));
-        } catch (err) {
-          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      if (req.method === "GET" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "stream" && parts.length === 5) {
-        const termId = parts[3]!;
-        if (!manager.terminalExists(parts[1]!, termId)) {
-          json(res, 404, { error: "no such terminal" });
-          return;
-        }
-        res.writeHead(200, {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-        });
-        res.write(`data: ${JSON.stringify({ type: "open" })}\n\n`);
-        const unsubscribe = manager.subscribeTerminal(parts[1]!, termId, (frame) => {
-          res.write(`data: ${JSON.stringify(frame)}\n\n`);
-        });
-        // Heartbeat keeps proxies from closing an idle terminal stream.
-        const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
-        req.on("close", () => {
-          clearInterval(heartbeat);
-          unsubscribe();
-        });
-        return;
-      }
-
-      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "input" && parts.length === 5) {
-        const body = await readBody(req);
-        if (typeof body.data !== "string") {
-          json(res, 400, { error: "data must be a string" });
-          return;
-        }
-        try {
-          manager.writeTerminal(parts[1]!, parts[3]!, body.data);
-          json(res, 200, { ok: true });
-        } catch (err) {
-          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "resize" && parts.length === 5) {
-        const body = await readBody(req);
-        try {
-          manager.resizeTerminal(
-            parts[1]!,
-            parts[3]!,
-            typeof body.cols === "number" ? body.cols : 80,
-            typeof body.rows === "number" ? body.rows : 24,
-          );
-          json(res, 200, { ok: true });
-        } catch (err) {
-          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
-        }
-        return;
-      }
-
-      if (req.method === "POST" && parts[0] === "sessions" && parts[2] === "terminal" && parts[4] === "exit" && parts.length === 5) {
-        try {
-          manager.exitTerminal(parts[1]!, parts[3]!);
-          json(res, 200, { ok: true });
-        } catch (err) {
-          json(res, 409, { error: err instanceof Error ? err.message : String(err) });
         }
         return;
       }

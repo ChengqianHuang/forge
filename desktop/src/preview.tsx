@@ -539,6 +539,7 @@ if (scene === "dock") {
       { id: "forge.reliability", name: "Harness Reliability", version: "1.0.0", capabilities: ["read-action", "ui"], required: true, status: "active" },
       { id: "forge.workspace-changes", name: "Workspace Changes", version: "1.0.0", capabilities: ["event-subscriber", "read-action", "ui"], required: false, status: "active" },
       { id: "forge.workspace-files", name: "Workspace Files", version: "1.0.0", capabilities: ["read-action", "ui"], required: false, status: "active" },
+      { id: "forge.terminal", name: "Session terminal", version: "1.0.0", capabilities: ["interaction", "ui"], required: false, status: "active" },
     ],
     slashCommands: [],
     uiContributions: [
@@ -547,6 +548,7 @@ if (scene === "dock") {
       { id: "reliability", label: "诊断", surface: "session-header", renderer: "reliability", pluginId: "forge.reliability" },
       { id: "workspace-changes", label: "变更", surface: "session-header", renderer: "workspace-changes", readAction: "diff", pluginId: "forge.workspace-changes" },
       { id: "workspace-files", label: "文件", surface: "dock", renderer: "workspace-files", pluginId: "forge.workspace-files" },
+      { id: "terminal", label: "终端", surface: "dock", renderer: "terminal", pluginId: "forge.terminal" },
     ],
   };
   const realFetch = globalThis.fetch.bind(globalThis);
@@ -555,16 +557,19 @@ if (scene === "dock") {
     if (url.endsWith("/capabilities") && !init?.method) {
       return Promise.resolve(new Response(JSON.stringify(sampleCapabilities), { status: 200, headers: { "content-type": "application/json" } }));
     }
-    if (url.match(/\/terminal$/)&& init?.method === "POST") {
+    if (url.includes("/capabilities/forge.terminal/interact/create") && init?.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify({ id: "term-preview-1" }), { status: 200, headers: { "content-type": "application/json" } }));
     }
-    if (url.includes("/terminal/") && url.includes("/input") && init?.method === "POST") {
+    if (url.includes("/capabilities/forge.terminal/interact/input") && init?.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
     }
-    if (url.includes("/terminal/") && url.includes("/resize") && init?.method === "POST") {
+    if (url.includes("/capabilities/forge.terminal/interact/resize") && init?.method === "POST") {
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
     }
-    if (url.includes("/terminal/") && url.includes("/stream") && !init?.method) {
+    if (url.includes("/capabilities/forge.terminal/interact/exit") && init?.method === "POST") {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    if (url.includes("/capabilities/forge.terminal/stream/output") && !init?.method) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         start(controller) {

@@ -111,6 +111,79 @@ describe("PluginRegistry", () => {
     assert.equal(aborted, true);
   });
 
+  test("validates and dispatches stateful request/stream interactions with lifecycle cleanup", async () => {
+    const registry = new PluginRegistry();
+    let disposedSession: string | undefined;
+    let disposed = false;
+    registry.register({
+      manifest: {
+        id: "test.interactive",
+        name: "interactive",
+        version: "1",
+        capabilities: ["interaction"],
+        interactions: [
+          { id: "send", description: "send", kind: "request" },
+          { id: "events", description: "events", kind: "stream" },
+        ],
+      },
+      activate: () => ({}),
+      interact: (actionId, input) => ({ actionId, input }),
+      subscribe: (_actionId, _input, _context, emit) => {
+        emit({ type: "ready" });
+        return () => {};
+      },
+      disposeSession: (sessionId) => { disposedSession = sessionId; },
+      dispose: () => { disposed = true; },
+    });
+    const interactionContext = {
+      session: context([]).session,
+      signal: new AbortController().signal,
+      config: {},
+    };
+    assert.deepEqual(
+      await registry.interact("test.interactive", "send", { value: 1 }, interactionContext),
+      { actionId: "send", input: { value: 1 } },
+    );
+    const frames: Record<string, unknown>[] = [];
+    const unsubscribe = await registry.subscribe("test.interactive", "events", {}, interactionContext, (frame) => frames.push(frame));
+    assert.deepEqual(frames, [{ type: "ready" }]);
+    unsubscribe();
+    const host = await registry.activate(context([]));
+    await host.setEnabled("test.interactive", false);
+    assert.equal(disposedSession, "s1");
+    await host.dispose();
+    disposedSession = undefined;
+    await registry.disposeSession("s1");
+    await registry.dispose();
+    assert.equal(disposedSession, "s1");
+    assert.equal(disposed, true);
+  });
+
+  test("interaction declarations and handlers must agree", () => {
+    const registry = new PluginRegistry();
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.missing-interact",
+        name: "missing",
+        version: "1",
+        capabilities: ["interaction"],
+        interactions: [{ id: "send", description: "send", kind: "request" }],
+      },
+      activate: () => ({}),
+    }), /without an interact handler/);
+    assert.throws(() => registry.register({
+      manifest: {
+        id: "test.undeclared-interact",
+        name: "undeclared",
+        version: "1",
+        capabilities: [],
+        interactions: [{ id: "events", description: "events", kind: "stream" }],
+      },
+      activate: () => ({}),
+      subscribe: () => () => {},
+    }), /without the "interaction" capability/);
+  });
+
   test("rejects UI descriptors that reference undeclared read actions", () => {
     const registry = new PluginRegistry();
     assert.throws(() => registry.register({

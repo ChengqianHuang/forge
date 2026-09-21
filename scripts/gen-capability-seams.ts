@@ -76,6 +76,7 @@ const MANIFEST_INVENTORY = {
   slashCommands: true,
   ui: true,
   readActions: true,
+  interactions: true,
   configSchema: true,
 } satisfies Record<keyof PluginManifest, true>;
 
@@ -83,6 +84,10 @@ const PLUGIN_INVENTORY = {
   manifest: true,
   activate: true,
   read: true,
+  interact: true,
+  subscribe: true,
+  disposeSession: true,
+  dispose: true,
 } satisfies Record<keyof ForgePlugin, true>;
 
 const CAPABILITY_INVENTORY = {
@@ -91,6 +96,7 @@ const CAPABILITY_INVENTORY = {
   guardrail: true,
   "event-subscriber": true,
   ui: true,
+  interaction: true,
   "read-action": true,
 } satisfies Record<PluginCapability, true>;
 
@@ -183,6 +189,12 @@ const ROUTING: RoutingRow[] = [
     mount: "`manifest.readActions` + `plugin.read`",
     boundary: "运行实例销毁后仍可用；generic route `GET /sessions/:id/capabilities/:pluginId/read/:actionId`",
     seams: ["cap:read-action", "manifest.readActions", "plugin.read"],
+  },
+  {
+    goal: "有状态的人机交互（请求 / 长流）",
+    mount: "`manifest.interactions` + `plugin.interact` / `plugin.subscribe`",
+    boundary: "通用 HTTP request/SSE；可跨 agent run 存活；删除会话与关闭服务器分别进入 `disposeSession` / `dispose`",
+    seams: ["cap:interaction", "manifest.interactions", "plugin.interact", "plugin.subscribe", "plugin.disposeSession", "plugin.dispose"],
   },
   {
     goal: "桌面 UI",
@@ -309,6 +321,7 @@ async function observe(): Promise<string> {
         const services = fact?.services ?? [];
         const commands = (plugin.slashCommands ?? []).map((command) => `/${command.name}`);
         const readActions = (plugin.readActions ?? []).map((action) => action.id);
+        const interactions = (plugin.interactions ?? []).map((action) => `${action.id}:${action.kind}`);
         const ui = (plugin.ui ?? []).map((contribution) => `${contribution.surface}:\`${contribution.renderer}\``);
         const configKeys = (plugin.configSchema ?? []).map((field) => field.key);
         const cell = (values: string[], mono = true) =>
@@ -322,6 +335,7 @@ async function observe(): Promise<string> {
           cell(services),
           fact?.subscribesEvents ? "✓" : "—",
           cell(readActions),
+          cell(interactions),
           ui.length > 0 ? ui.join(" ") : "—",
           cell(configKeys),
         ].map((cellValue, index) => (index === 0 ? cellValue : ` ${cellValue}`)).join("|").replace(/^/, "|").concat(" |");
@@ -342,8 +356,8 @@ async function observe(): Promise<string> {
         "",
         "## 能力 → 运行时贡献",
         "",
-        "| 插件 | 必需 | 内核钩子（经复用器） | 工具 | 斜杠命令 | 会话服务 | 事件订阅 | read actions | UI | 配置键 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 插件 | 必需 | 内核钩子（经复用器） | 工具 | 斜杠命令 | 会话服务 | 事件订阅 | read actions | interactions | UI | 配置键 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
         ...rows,
         "",
         "## 挂载插槽清单",
@@ -369,7 +383,7 @@ async function observe(): Promise<string> {
         "- 上表`内核钩子`列的每个钩子都经内核 `multiplexHooks` 逐插件隔离聚合——**没有任何插件替换或包裹 agent loop**；插件钩子运行失败时被故障隔离，循环本身不受影响。",
         "- 内核自有护栏（guard policy、write journal、审批、卡死检测、watchdog、compaction）不在本表：它们是 AgentLoopConfig 内核钩子的实现，不是插件。",
         "- `transformContext` 内核不安装（Rule 5.6）；插件若声明它也会出现在钩子列，属合法扩展面。",
-        "- read actions 经 `GET /sessions/:id/capabilities/:pluginId/read/:actionId` 提供有界、stateless 的检视；UI 列的 `dock` surface 直接成为会话右栏 tab。",
+        "- read actions 经 `GET /sessions/:id/capabilities/:pluginId/read/:actionId` 提供有界、stateless 的检视；interactions 经通用 request/SSE 路由承载有状态用户交互；UI 列的 `dock` surface 直接成为会话右栏 tab。",
         "- 路由表引用的每个 `hooks.*` / `instance.*` / `context.*` / `manifest.*` / `plugin.*` / `surface:*` / 能力词都在生成时被解析：指向不存在的插槽即门禁失败。",
         "- 钩子清单经 `multiplexHooks` **运行时双向**核对：复用器组合的槽位集合必须恰等于清单集合——多一个（复用器私加槽位）或少一个（清单引用了复用器从不融合的钩子）都失败。",
         "- 插件若挂上清单外的钩子键（typo 会被复用器静默丢弃、贡献恒零），贡献表校验直接失败。",

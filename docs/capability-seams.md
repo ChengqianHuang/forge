@@ -8,15 +8,16 @@
 
 ## 能力 → 运行时贡献
 
-| 插件 | 必需 | 内核钩子（经复用器） | 工具 | 斜杠命令 | 会话服务 | 事件订阅 | read actions | UI | 配置键 |
-|---|---|---|---|---|---|---|---|---|---|
-|`forge.session-commands`| | —| —| `/compact` `/status` `/context`| —| —| —| —| — |
-|`forge.usage`| ✓| —| —| —| `usage`| ✓| —| —| — |
-|`forge.capability-health`| ✓| —| —| —| —| —| —| session-header:`capability-health`| — |
-|`forge.guard-audit`| ✓| —| —| —| —| —| —| session-header:`guard-audit`| — |
-|`forge.reliability`| ✓| —| —| —| —| —| `metrics`| session-header:`reliability`| — |
-|`forge.workspace-changes`| | —| —| —| —| ✓| `diff`| session-header:`workspace-changes`| `gitTimeoutMs` `diffMaxBytes` |
-|`forge.workspace-files`| | —| —| —| —| —| `list` `read`| dock:`workspace-files`| — |
+| 插件 | 必需 | 内核钩子（经复用器） | 工具 | 斜杠命令 | 会话服务 | 事件订阅 | read actions | interactions | UI | 配置键 |
+|---|---|---|---|---|---|---|---|---|---|---|
+|`forge.session-commands`| | —| —| `/compact` `/status` `/context`| —| —| —| —| —| — |
+|`forge.usage`| ✓| —| —| —| `usage`| ✓| —| —| —| — |
+|`forge.capability-health`| ✓| —| —| —| —| —| —| —| session-header:`capability-health`| — |
+|`forge.guard-audit`| ✓| —| —| —| —| —| —| —| session-header:`guard-audit`| — |
+|`forge.reliability`| ✓| —| —| —| —| —| `metrics`| —| session-header:`reliability`| — |
+|`forge.workspace-changes`| | —| —| —| —| ✓| `diff`| —| session-header:`workspace-changes`| `gitTimeoutMs` `diffMaxBytes` |
+|`forge.workspace-files`| | —| —| —| —| —| `list` `read`| —| dock:`workspace-files`| — |
+|`forge.terminal`| | —| —| —| —| —| —| `create:request` `input:request` `resize:request` `exit:request` `output:stream`| dock:`terminal`| — |
 
 ## 挂载插槽清单
 
@@ -25,9 +26,9 @@
 - **内核钩子 `PluginHooks`**（6）：`beforeToolCall` `afterToolCall` `shouldStopAfterTurn` `getSteeringMessages` `transformContext` `prepareNextTurn`
 - **运行时贡献 `PluginInstance`**（6）：`tools` `hooks` `slashCommands` `onAgentEvent` `services` `dispose`
 - **激活上下文 `PluginSessionContext`**（5）：`session` `signal` `emitEvent` `enqueueSteering` `requestCompaction`
-- **声明面 `PluginManifest`**（10）：`id` `name` `version` `description` `required` `capabilities` `slashCommands` `ui` `readActions` `configSchema`
-- **插件对象 `ForgePlugin`**（3）：`manifest` `activate` `read`
-- **能力词 `PluginCapability`**（6）：`slash-command` `tool` `guardrail` `event-subscriber` `ui` `read-action`
+- **声明面 `PluginManifest`**（11）：`id` `name` `version` `description` `required` `capabilities` `slashCommands` `ui` `readActions` `interactions` `configSchema`
+- **插件对象 `ForgePlugin`**（7）：`manifest` `activate` `read` `interact` `subscribe` `disposeSession` `dispose`
+- **能力词 `PluginCapability`**（7）：`slash-command` `tool` `guardrail` `event-subscriber` `ui` `interaction` `read-action`
 - **UI surface**（2）：`session-header` `dock`
 
 ## 新增行为去处（路由表）
@@ -46,6 +47,7 @@
 | 只读观察 agent 事件流 | `instance.onAgentEvent` | 超时 + 故障隔离到单插件；不得阻塞或改写循环 |
 | 人机命令（不走模型轮次） | `instance.slashCommands` | 先声明 `manifest.slashCommands` 投影给消费端；输出进时间线，不作为 user prompt 发给模型 |
 | 有界、无状态的会话检视 | `manifest.readActions` + `plugin.read` | 运行实例销毁后仍可用；generic route `GET /sessions/:id/capabilities/:pluginId/read/:actionId` |
+| 有状态的人机交互（请求 / 长流） | `manifest.interactions` + `plugin.interact` / `plugin.subscribe` | 通用 HTTP request/SSE；可跨 agent run 存活；删除会话与关闭服务器分别进入 `disposeSession` / `dispose` |
 | 桌面 UI | `manifest.ui` | 服务器只声明 placement（`surface:session-header` / `surface:dock`）与 renderer key，桌面编译期映射 —— 会话组件不按能力 id 分支（Rule 9.2） |
 | 会话内共享服务 | `instance.services` | 进程内插槽，不是协议边界（单体原则） |
 | 插件参数化 | `manifest.configSchema` | 默认值 ← 用户全局偏好合并后送达 `activate`；HTTP 边界拒未知键与错形状，「下次激活生效」如实提示 |
@@ -58,7 +60,7 @@
 - 上表`内核钩子`列的每个钩子都经内核 `multiplexHooks` 逐插件隔离聚合——**没有任何插件替换或包裹 agent loop**；插件钩子运行失败时被故障隔离，循环本身不受影响。
 - 内核自有护栏（guard policy、write journal、审批、卡死检测、watchdog、compaction）不在本表：它们是 AgentLoopConfig 内核钩子的实现，不是插件。
 - `transformContext` 内核不安装（Rule 5.6）；插件若声明它也会出现在钩子列，属合法扩展面。
-- read actions 经 `GET /sessions/:id/capabilities/:pluginId/read/:actionId` 提供有界、stateless 的检视；UI 列的 `dock` surface 直接成为会话右栏 tab。
+- read actions 经 `GET /sessions/:id/capabilities/:pluginId/read/:actionId` 提供有界、stateless 的检视；interactions 经通用 request/SSE 路由承载有状态用户交互；UI 列的 `dock` surface 直接成为会话右栏 tab。
 - 路由表引用的每个 `hooks.*` / `instance.*` / `context.*` / `manifest.*` / `plugin.*` / `surface:*` / 能力词都在生成时被解析：指向不存在的插槽即门禁失败。
 - 钩子清单经 `multiplexHooks` **运行时双向**核对：复用器组合的槽位集合必须恰等于清单集合——多一个（复用器私加槽位）或少一个（清单引用了复用器从不融合的钩子）都失败。
 - 插件若挂上清单外的钩子键（typo 会被复用器静默丢弃、贡献恒零），贡献表校验直接失败。

@@ -75,6 +75,13 @@ and validation; the kernel knows only plugin id, action id, session context and
 timeout. Large or transient views such as a per-file Git patch therefore stay
 out of the durable event log without adding feature-specific server routes.
 
+Stateful user surfaces use the adjacent interaction seam: bounded requests and
+long-lived SSE subscriptions are declared in the manifest and dispatched by
+generic capability routes. They are platform-owned resources rather than agent
+run resources, so session deletion and server shutdown invoke separate cleanup
+hooks. The built-in session terminal proves this seam; neither SessionManager
+nor the HTTP router knows PTY operations.
+
 Capability lifecycle is projected by `forge.capability-health`. The desktop
 folds ordered `PLUGIN_*` events into current state plus an inspection history;
 the server capability snapshot supplies manifest metadata and truthful live or

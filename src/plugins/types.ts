@@ -12,6 +12,8 @@ export type PluginCapability =
   | "guardrail"
   | "event-subscriber"
   | "ui"
+  /** Stateful, user-initiated request/stream surfaces that may outlive a run. */
+  | "interaction"
   /**
    * Stateless inspection surface: declared `readActions` plus a `read` handler.
    * Without a word for it, a plugin whose only contribution is read actions had
@@ -44,6 +46,7 @@ export interface PluginManifest {
   slashCommands?: Array<{ name: string; description: string }>;
   ui?: PluginUiContribution[];
   readActions?: PluginReadActionDescriptor[];
+  interactions?: PluginInteractionDescriptor[];
   /** Declared parameters; the manager UI renders forms straight from this. */
   configSchema?: PluginConfigField[];
 }
@@ -51,6 +54,12 @@ export interface PluginManifest {
 export interface PluginReadActionDescriptor {
   id: string;
   description: string;
+}
+
+export interface PluginInteractionDescriptor {
+  id: string;
+  description: string;
+  kind: "request" | "stream";
 }
 
 /** Compiled-in desktop contribution. The server declares placement and a
@@ -71,6 +80,9 @@ export interface PluginReadContext {
   /** Resolved per-plugin config (schema defaults ← user preferences). */
   config: Record<string, unknown>;
 }
+
+export type PluginInteractionContext = PluginReadContext;
+export type PluginInteractionFrame = Record<string, unknown>;
 
 export interface PluginSessionContext {
   session: Session;
@@ -123,6 +135,24 @@ export interface ForgePlugin {
     input: Record<string, unknown>,
     context: PluginReadContext,
   ) => Promise<unknown> | unknown;
+  /** Stateful user action, dispatched through the generic capability route. */
+  interact?: (
+    actionId: string,
+    input: Record<string, unknown>,
+    context: PluginInteractionContext,
+  ) => Promise<unknown> | unknown;
+  /** Long-lived user stream. The returned function releases the subscription,
+   * not necessarily the underlying resource. */
+  subscribe?: (
+    actionId: string,
+    input: Record<string, unknown>,
+    context: PluginInteractionContext,
+    emit: (frame: PluginInteractionFrame) => void,
+  ) => Promise<() => void> | (() => void);
+  /** Release plugin-owned resources tied to a deleted session. */
+  disposeSession?: (sessionId: string) => Promise<void> | void;
+  /** Release plugin-owned platform resources during server shutdown. */
+  dispose?: () => Promise<void> | void;
 }
 
 export type PluginRuntimeStatus = "active" | "disabled" | "failed" | "disposed";

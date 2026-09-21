@@ -7,7 +7,8 @@ import { saveForgeConfig } from "../server/config-store.ts";
 /**
  * User-terminal smoke (the dock 终端 tab): create a pty shell in a session
  * workspace, write into it, and read the echo off the SSE stream. Exercises
- * node-pty's native build plus the terminal HTTP surface end to end — this
+ * node-pty's native build plus the generic capability interaction/stream
+ * surface end to end — this
  * is what catches a broken native compile on a fresh platform.
  */
 
@@ -45,14 +46,15 @@ const created = await post("/sessions", { goal: "terminal smoke" });
 check("session created", created.status === 202 && typeof created.body?.sessionId === "string", created);
 const sessionId = created.body!.sessionId as string;
 
-const term = await post(`/sessions/${sessionId}/terminal`, { cols: 80, rows: 24 });
+const capabilityBase = `/sessions/${sessionId}/capabilities/forge.terminal`;
+const term = await post(`${capabilityBase}/interact/create`, { cols: 80, rows: 24 });
 check("terminal created", term.status === 200 && typeof term.body?.id === "string", term);
 const termId = term.body!.id as string;
 
 const chunks: string[] = [];
 const controller = new AbortController();
 const streamDone = (async () => {
-  const r = await fetch(`${handle.url}/sessions/${sessionId}/terminal/${termId}/stream`, {
+  const r = await fetch(`${handle.url}${capabilityBase}/stream/output?terminalId=${encodeURIComponent(termId)}`, {
     headers: auth, signal: controller.signal,
   });
   check("stream is SSE", r.status === 200 && (r.headers.get("content-type") ?? "").includes("text/event-stream"));
@@ -65,13 +67,13 @@ const streamDone = (async () => {
   }
 })();
 await new Promise((resolve) => setTimeout(resolve, 500));
-await post(`/sessions/${sessionId}/terminal/${termId}/input`, { data: "echo FORGE_SMOKE_$((7*6))\r" });
+await post(`${capabilityBase}/interact/input`, { terminalId: termId, data: "echo FORGE_SMOKE_$((7*6))\r" });
 await new Promise((resolve) => setTimeout(resolve, 1500));
 controller.abort();
 await streamDone.catch(() => {});
 check("echo observed on the stream", chunks.join("").includes("FORGE_SMOKE_42"), chunks.join("").slice(-200));
 
-const exited = await post(`/sessions/${sessionId}/terminal/${termId}/exit`);
+const exited = await post(`${capabilityBase}/interact/exit`, { terminalId: termId });
 check("terminal exited", exited.status === 200, exited);
 
 await handle.close();

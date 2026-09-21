@@ -124,10 +124,13 @@ The internal registry may compose only explicit kinds of contributions:
 - slash commands;
 - agent-event subscribers;
 - session-scoped services;
+- stateless read actions and stateful request/stream interactions;
 - UI capability descriptors and timeline output.
 
-New extension-point categories require a demonstrated first-party need. The
-registry must not become a speculative framework.
+The stateful interaction category was added only after the built-in terminal
+demonstrated the need: it must survive an agent run, stream output and release
+resources on session/server lifecycle boundaries. New categories still require
+a comparable first-party client; the registry must not become speculative.
 
 Built-in registration is compiled in and reviewed with the rest of Forge.
 User-installed plugins may join the same registry from an explicit local or Git

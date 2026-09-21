@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 // xterm's structural CSS: without it the width-measure helper row renders
 // inline as visible glyph garbage.
 import "@xterm/xterm/css/xterm.css";
-import { readCapability, setSessionPluginEnabled, createTerminal, streamTerminal, terminalExit, terminalInput, terminalResize } from "../lib/api.ts";
+import { interactCapability, readCapability, setSessionPluginEnabled, streamCapability } from "../lib/api.ts";
 import { store } from "../lib/store.ts";
 import type {
   ConversationView,
@@ -311,7 +311,7 @@ function WorkspaceFilesRenderer({ sessionId, pluginId, fileRequest }: DockRender
  * reconnect handle; a dead one surfaces a restart affordance instead of a
  * silently dead pane. This is a USER surface, outside the guardrails by
  * design (same trust as the user's own terminal app). */
-function TerminalRenderer({ sessionId }: DockRendererProps) {
+function TerminalRenderer({ sessionId, pluginId }: DockRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<"boot" | "live" | "ended" | "error">("boot");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -358,17 +358,17 @@ function TerminalRenderer({ sessionId }: DockRendererProps) {
 
         let termId = localStorage.getItem(`forge.terminal.v1.${sessionId}`) ?? "";
         if (!termId) {
-          const created = await createTerminal(sessionId, cols, rows);
+          const created = await interactCapability<{ id: string }>(sessionId, pluginId, "create", { cols, rows });
           termId = created.id;
           localStorage.setItem(`forge.terminal.v1.${sessionId}`, termId);
         }
 
-        xterm.onData((data) => void terminalInput(sessionId, termId, data));
+        xterm.onData((data) => void interactCapability(sessionId, pluginId, "input", { terminalId: termId, data }));
 
         const refit = () => {
           try {
             fit.fit();
-            void terminalResize(sessionId, termId, xterm.cols, xterm.rows);
+            void interactCapability(sessionId, pluginId, "resize", { terminalId: termId, cols: xterm.cols, rows: xterm.rows });
           } catch {
             // Container not measurable yet; next resize event retries.
           }
@@ -377,15 +377,17 @@ function TerminalRenderer({ sessionId }: DockRendererProps) {
         observer.observe(containerRef.current);
         cleanupResize = () => observer.disconnect();
 
-        cancelStream = streamTerminal(
+        cancelStream = streamCapability<{ type: "open" | "data" | "exit"; payload?: string }>(
           sessionId,
-          termId,
+          pluginId,
+          "output",
+          { terminalId: termId },
           (frame) => {
             if (disposed) return;
             if (frame.type === "data") {
               setStatus("live");
-              xterm.write(frame.payload);
-            } else {
+              xterm.write(frame.payload ?? "");
+            } else if (frame.type === "exit") {
               setStatus("ended");
             }
           },
@@ -412,12 +414,12 @@ function TerminalRenderer({ sessionId }: DockRendererProps) {
       // in the same container and the pane shows glyph garbage.
       term?.dispose();
     };
-  }, [sessionId, restartSeq]);
+  }, [sessionId, pluginId, restartSeq]);
 
   async function restart() {
     const saved = localStorage.getItem(`forge.terminal.v1.${sessionId}`);
     if (saved) {
-      await terminalExit(sessionId, saved).catch(() => {});
+      await interactCapability(sessionId, pluginId, "exit", { terminalId: saved }).catch(() => {});
       localStorage.removeItem(`forge.terminal.v1.${sessionId}`);
     }
     setRestartSeq((n) => n + 1);
@@ -513,19 +515,7 @@ export function RightDock({
       },
     }];
   });
-  // The built-in terminal is a kernel surface (needs pty server routes, which
-  // read-action plugins cannot declare), so it is not a plugin contribution.
-  const tabsWithTerminal = [
-    ...tabs,
-    {
-      key: "builtin:terminal",
-      renderer: "terminal",
-      label: "终端",
-      Renderer: DOCK_RENDERERS.terminal!,
-      props: { sessionId, pluginId: "", conversation, capabilities: capabilities!, running, fileRequest },
-    },
-  ];
-  const active = tabsWithTerminal.find((t) => t.renderer === tab) ?? tabsWithTerminal[0];
+  const active = tabs.find((candidate) => candidate.renderer === tab) ?? tabs[0];
 
   // Width drag: pointer capture on the left edge handle, clamped.
   const draggingRef = useRef(false);
@@ -558,7 +548,7 @@ export function RightDock({
       />
       <div className="dock-inner">
         <div className="dock-tabs" role="tablist" aria-label="会话工作区">
-          {tabsWithTerminal.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               role="tab"
