@@ -226,8 +226,14 @@ restarts. Hot replacement is not implemented.
 The generated [`capability-seams.md`](capability-seams.md) is the machine-checked
 map of every capability's runtime contributions (hooks through the kernel
 multiplexer, tools, commands, services, read actions, UI surfaces, config
-keys). Regenerate with `npm run gen:seams`; the release gate fails when it is
-stale.
+keys), the full seam inventory of the plugin contract, and the routing table
+that answers "where does new behavior attach" with its boundary constraint.
+Regenerate with `npm run gen:seams`; the release gate fails when it is stale.
+The routing table is not free prose: every seam token it references resolves
+against a compiler-checked inventory (the tsconfig covers `scripts/`), and the
+hook list is verified at runtime — bidirectionally — against what
+`multiplexHooks` actually composes, so a plugin's typo'd hook (silently
+dropped, permanently worth zero) fails the gate too.
 
 ## Events
 
