@@ -239,6 +239,7 @@ export interface PluginSourceInfoView {
   version: string;
   description?: string;
   fileName: string;
+  sha256: string;
 }
 
 export interface PluginCapabilitySnapshot {

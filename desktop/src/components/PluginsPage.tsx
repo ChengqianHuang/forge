@@ -189,6 +189,8 @@ function InstallWizard({ onClose, onInstalled }: {
   onInstalled: () => void;
 }) {
   const [source, setSource] = useState("");
+  const [trusted, setTrusted] = useState(false);
+  const [inspectionId, setInspectionId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"input" | "checking" | "ready" | "installing" | "done" | "error">("input");
   const [found, setFound] = useState<PluginSourceInfoView[]>([]);
   const [errors, setErrors] = useState<Array<{ source: string; reason: string }>>([]);
@@ -200,8 +202,10 @@ function InstallWizard({ onClose, onInstalled }: {
     setMessage(null);
     setFound([]);
     setErrors([]);
+    setInspectionId(null);
     try {
       const result = await inspectPluginSource(source.trim());
+      setInspectionId(result.inspectionId);
       setFound(result.plugins);
       setErrors(result.errors);
       setPhase("ready");
@@ -212,10 +216,10 @@ function InstallWizard({ onClose, onInstalled }: {
   }
 
   async function install() {
-    if (phase !== "ready" || found.length === 0) return;
+    if (phase !== "ready" || found.length === 0 || !inspectionId) return;
     setPhase("installing");
     try {
-      const result = await installPlugin(source.trim());
+      const result = await installPlugin(inspectionId);
       setErrors(result.errors);
       if (result.plugins.length > 0) {
         setPhase("done");
@@ -239,13 +243,29 @@ function InstallWizard({ onClose, onInstalled }: {
         <h3 className="modal-title">添加插件</h3>
         <p className="modal-text">
           支持本地 .plugin.ts 文件或目录，以及 https git 仓库地址（owner/repo 亦可）。
-          安装前会先检查模块的 manifest 合法性。
+          Forge 插件是受信任的进程内代码；“检查”会下载或复制模块，并以当前用户身份执行它来验证 manifest。
         </p>
+        <label className="plugin-trust-row">
+          <input
+            type="checkbox"
+            checked={trusted}
+            onChange={(event) => setTrusted(event.target.checked)}
+            disabled={phase === "checking" || phase === "installing"}
+          />
+          <span>我信任这个来源，并允许在检查阶段执行其中的插件代码。</span>
+        </label>
         <div className="plugin-wizard-row">
           <input
             className="input plugin-wizard-input"
             value={source}
-            onChange={(e) => setSource(e.target.value)}
+            onChange={(e) => {
+              setSource(e.target.value);
+              setInspectionId(null);
+              setFound([]);
+              setErrors([]);
+              setMessage(null);
+              setPhase("input");
+            }}
             placeholder="~/my-plugins/greet.plugin.ts 或 https://github.com/you/forge-plugin.git"
             onKeyDown={(e) => e.key === "Enter" && void inspect()}
             disabled={phase === "checking" || phase === "installing"}
@@ -253,7 +273,7 @@ function InstallWizard({ onClose, onInstalled }: {
           <button
             className="btn btn-ghost btn-small"
             onClick={() => void inspect()}
-            disabled={phase === "checking" || !source.trim()}
+            disabled={phase === "checking" || !source.trim() || !trusted}
           >
             {phase === "checking" ? "检查中…" : "检查"}
           </button>
@@ -267,6 +287,7 @@ function InstallWizard({ onClose, onInstalled }: {
                   <b className="plugin-wizard-name">{plugin.name}</b>
                   <code className="plugin-version">{plugin.version}</code>
                   <code className="plugin-version">{plugin.fileName}</code>
+                  <code className="plugin-version" title={plugin.sha256}>sha256:{plugin.sha256.slice(0, 12)}</code>
                 </div>
                 {plugin.description && <div className="plugin-desc">{plugin.description}</div>}
               </div>
@@ -284,7 +305,7 @@ function InstallWizard({ onClose, onInstalled }: {
           <button
             className="btn btn-primary btn-small"
             onClick={() => void install()}
-            disabled={phase !== "ready" || found.length === 0}
+            disabled={phase !== "ready" || found.length === 0 || !inspectionId}
           >
             {phase === "installing" ? "安装中…" : `安装${found.length > 0 ? `（${found.length} 个）` : ""}`}
           </button>

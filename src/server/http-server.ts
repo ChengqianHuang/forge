@@ -13,7 +13,6 @@ import type { ThinkingLevel } from "../types.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 import { createMcpPlugin, McpStdioClient } from "../plugins/mcp.ts";
 import { loadExternalPlugins } from "./external-plugins.ts";
-import { inspectPluginSource } from "./plugin-install.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
 const THINKING_LEVEL_VALUES: ReadonlySet<string> = new Set([
@@ -242,7 +241,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
           return;
         }
         try {
-          json(res, 200, await inspectPluginSource(body.source));
+          json(res, 200, await manager.inspectExternalPlugin(body.source));
         } catch (err) {
           json(res, 400, { error: err instanceof Error ? err.message : String(err) });
         }
@@ -251,12 +250,12 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
 
       if (req.method === "POST" && parts[0] === "plugins" && parts[1] === "install" && parts.length === 2) {
         const body = await readBody(req);
-        if (typeof body.source !== "string" || !body.source) {
-          json(res, 400, { error: "source is required" });
+        if (typeof body.inspectionId !== "string" || !body.inspectionId) {
+          json(res, 400, { error: "inspectionId is required" });
           return;
         }
         try {
-          json(res, 200, await manager.installExternalPlugin(body.source));
+          json(res, 200, await manager.installExternalPlugin(body.inspectionId));
         } catch (err) {
           json(res, 400, { error: err instanceof Error ? err.message : String(err) });
         }

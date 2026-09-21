@@ -177,20 +177,23 @@ export async function setGlobalPluginEnabled(pluginId: string, enabled: boolean)
   await send(`/plugins/${encodeURIComponent(pluginId)}/enabled`, "POST", { enabled });
 }
 
-/** Inspect an install source (local path or git URL) without installing. */
+/** Execute and inspect a trusted install source without installing it. */
 export async function inspectPluginSource(source: string): Promise<{
+  inspectionId: string;
+  expiresAt: number;
+  executesCode: true;
   plugins: PluginSourceInfoView[];
   errors: Array<{ source: string; reason: string }>;
 }> {
   return send("/plugins/inspect", "POST", { source });
 }
 
-/** Install: copies plugin files into forge home and registers them live. */
-export async function installPlugin(source: string): Promise<{
+/** Install the exact bytes retained by a one-shot inspection ticket. */
+export async function installPlugin(inspectionId: string): Promise<{
   plugins: PluginSourceInfoView[];
   errors: Array<{ source: string; reason: string }>;
 }> {
-  return send("/plugins/install", "POST", { source });
+  return send("/plugins/install", "POST", { inspectionId });
 }
 
 export async function uninstallPlugin(pluginId: string): Promise<void> {

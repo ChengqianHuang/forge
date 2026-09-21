@@ -991,6 +991,11 @@ body.preview-hover .session-del { display: inline-flex; }
 
 /* Install wizard */
 .plugin-wizard { width: 520px; }
+.plugin-trust-row {
+  display: flex; align-items: flex-start; gap: 8px; margin: 12px 0;
+  color: var(--text-secondary); font-size: 12px; line-height: 1.45;
+}
+.plugin-trust-row input { margin-top: 2px; accent-color: var(--accent); }
 .plugin-wizard-row { display: flex; gap: 8px; }
 .plugin-wizard-input { flex: 1; }
 .plugin-wizard-found { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }

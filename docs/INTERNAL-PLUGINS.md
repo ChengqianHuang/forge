@@ -260,13 +260,24 @@ server start; changes apply on restart.
 
 ### Install flow (添加插件 wizard)
 
-`POST /plugins/inspect {source}` validates a source without touching forge
-home; `POST /plugins/install {source}` copies the plugin files in and
-registers them into the live registry — the next session activation sees them
-without a restart. A source is a local `*.plugin.{ts,js,mjs}` file, a local
-directory of them, any git URL (including `file://`; shallow-cloned to a
-scratch dir), or the GitHub `owner/repo` shorthand. File-name collisions in
-the plugins directory are rejected — an install never overwrites an existing
-plugin file. `POST /plugins/:id/uninstall` deletes the file and drops the
-plugin from the live registry; sessions that already activated it keep their
-instance until disposal.
+External plugins are trusted in-process code, not passive data. The desktop
+requires an explicit trust acknowledgement before inspection and says plainly
+that inspection executes module code as the current user. Forge does not claim
+that manifest validation is a sandbox or a security review.
+
+`POST /plugins/inspect {source}` copies or downloads a source into a private
+scratch directory, executes each candidate to validate it, hashes the staged
+bytes, and returns a short-lived `inspectionId`. It does not write forge home.
+`POST /plugins/install {inspectionId}` consumes that ticket exactly once,
+copies the already-inspected bytes into forge home and registers them into the
+live registry — there is no second source read or network fetch between review
+and installation. Tickets expire after ten minutes; expiry, successful use and
+server shutdown all remove their staging directory.
+
+A source is a local `*.plugin.{ts,js,mjs}` file, a local directory of them, any
+git URL (including `file://`; shallow-cloned to a scratch dir), or the GitHub
+`owner/repo` shorthand. A matching local path wins over shorthand resolution.
+File-name collisions in the plugins directory are rejected — an install never
+overwrites an existing plugin file. `POST /plugins/:id/uninstall` deletes the
+file and drops the plugin from the live registry; sessions that already
+activated it keep their instance until disposal.

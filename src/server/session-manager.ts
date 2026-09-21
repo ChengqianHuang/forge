@@ -71,7 +71,14 @@ import { resolvePluginConfig, validateConfigInput } from "../plugins/config-sche
 import { loadPluginPreferences, savePluginPreferences } from "./plugin-preferences.ts";
 import { TerminalManager } from "./terminal-manager.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
-import { externalPluginsDir, inspectPluginSource, installPluginFiles, cleanupStaging, type PluginSourceInfo } from "./plugin-install.ts";
+import {
+  externalPluginsDir,
+  PluginInstallCoordinator,
+  installPluginFiles,
+  cleanupStaging,
+  type PluginInspection,
+  type PluginSourceInfo,
+} from "./plugin-install.ts";
 import { readdir, unlink } from "node:fs/promises";
 
 /**
@@ -161,6 +168,7 @@ export class SessionManager {
   private runtimes = new Map<string, SessionRuntime>();
   private readonly plugins: PluginRegistry;
   private readonly terminals = new TerminalManager();
+  private readonly pluginInstaller = new PluginInstallCoordinator();
   private readonly externalPluginIds: Set<string>;
   /** pluginId → file name inside <forgeHome>/plugins, for uninstall. */
   private readonly externalFiles = new Map<string, string>();
@@ -737,26 +745,31 @@ export class SessionManager {
     return { config: resolvePluginConfig(plugin.configSchema, validated.config) };
   }
 
-  /** Install an external plugin from a local file/dir or a git URL: inspect
-   * the source, copy its plugin files into <forgeHome>/plugins, and register
-   * them into the live registry so the next session activation sees them —
-   * no restart needed. Failures are isolated per file. */
-  async installExternalPlugin(source: string): Promise<{
+  /** Execute and validate a trusted source, retaining its exact staged bytes
+   * behind a short-lived one-shot ticket. */
+  async inspectExternalPlugin(source: string): Promise<PluginInspection> {
+    if (!source || typeof source !== "string") throw new Error("source is required");
+    return this.pluginInstaller.inspect(source);
+  }
+
+  /** Consume an inspection ticket, copy those exact bytes into forge home and
+   * register them live. The source is never fetched or read a second time. */
+  async installExternalPlugin(inspectionId: string): Promise<{
     plugins: PluginSourceInfo[];
     errors: Array<{ source: string; reason: string }>;
   }> {
-    if (!source || typeof source !== "string") throw new Error("source is required");
+    if (!inspectionId || typeof inspectionId !== "string") throw new Error("inspectionId is required");
     // Reject file-name collisions up front: an install must never overwrite a
     // plugin file the user (or another install) already put in place.
     const existing = new Set(await readdir(externalPluginsDir(this.opts.forgeHome)).catch(() => []));
-    const inspected = await inspectPluginSource(source);
+    const inspected = this.pluginInstaller.take(inspectionId);
     try {
       for (const plugin of inspected.plugins) {
         if (existing.has(plugin.fileName)) {
           throw new Error(`a file named ${plugin.fileName} already exists in ${externalPluginsDir(this.opts.forgeHome)}`);
         }
       }
-      await installPluginFiles(this.opts.forgeHome, source, inspected.stagingDir, inspected.plugins);
+      await installPluginFiles(this.opts.forgeHome, inspected.stagingDir, inspected.plugins);
     } finally {
       await cleanupStaging(inspected.stagingDir);
     }
@@ -837,6 +850,7 @@ export class SessionManager {
   /** Stop live runs and dispose session-scoped plugins during server shutdown. */
   async shutdown(): Promise<void> {
     this.terminals.killAll();
+    await this.pluginInstaller.dispose();
     const runtimes = [...this.runtimes.values()];
     for (const runtime of runtimes) {
       this.requestStop(runtime.session.id, runtime, "server-shutdown");
