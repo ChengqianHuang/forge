@@ -1,9 +1,9 @@
 {
   "name": "forge",
-  "version": "0.3.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Autonomous engineering orchestration system. Phase 1 vertical slice.",
+  "description": "Desktop engineering-agent platform with deterministic guardrails and durable sessions.",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "node --enable-source-maps --import tsx/esm src/cli/serve.ts",
