@@ -228,7 +228,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
           <div className="settings-section-head">
             <h3 className="modal-title">MCP tool servers</h3>
-            <div className="modal-sub">Enabled servers are discovered at Forge startup; their tools join the same guardrail path as built-in tools.</div>
+            <div className="modal-sub">保存后立即更新能力目录；新会话使用新配置，运行中的会话保留现有连接直到释放。所有 MCP 工具仍经过同一条 guardrail 路径。</div>
           </div>
           {(config?.mcpServers ?? []).map((server) => (
             <div key={server.id} className="card">
@@ -239,7 +239,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   onChange={(e) => updateMcp(server.id, { enabled: e.target.checked })}
                 />
                 <span className="prov-id">{server.id}</span>
-                <div style={{ flex: 1 }} />
+                <div className="prov-spacer" />
                 <button className="btn btn-danger btn-small" onClick={() => update({ mcpServers: (config?.mcpServers ?? []).filter((item) => item.id !== server.id) })}>Remove</button>
               </div>
               <div className="field-grid">

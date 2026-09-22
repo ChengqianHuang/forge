@@ -2,7 +2,7 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { loadForgeConfig, saveForgeConfig, validateProvider, validateMcpServer, resolveProvider } from "./config-store.ts";
+import { loadForgeConfig, normalizeForgeConfig, saveForgeConfig, validateProvider, validateMcpServer, resolveProvider } from "./config-store.ts";
 
 const TMP = "/tmp/forge-config-store-tests";
 const HOME = join(TMP, "home");
@@ -46,6 +46,30 @@ test("MCP server config is validated without executing it", () => {
     id: "fs", command: "npx", args: ["server"], enabled: true,
   });
   assert.equal(validateMcpServer({ id: "bad id", command: "npx" }), null);
+});
+
+test("interactive config saves reject duplicate MCP ids and strip derived fields", () => {
+  assert.throws(() => normalizeForgeConfig({
+    providers: [],
+    defaultProviderId: null,
+    mcpServers: [
+      { id: "fs", command: "one", args: [], enabled: true },
+      { id: "fs", command: "two", args: [], enabled: false },
+    ],
+  }), /duplicate MCP server id/);
+
+  assert.deepEqual(normalizeForgeConfig({
+    version: 99,
+    providers: [],
+    defaultProviderId: "missing",
+    mcpServers: [{ id: "fs", command: "node", args: [], enabled: true }],
+    modelCapabilities: { leaked: ["high"] },
+  }), {
+    version: 2,
+    providers: [],
+    defaultProviderId: null,
+    mcpServers: [{ id: "fs", command: "node", args: [], enabled: true }],
+  });
 });
 
 describe("resolveProvider", () => {

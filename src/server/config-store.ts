@@ -139,6 +139,48 @@ export function validateMcpServer(value: unknown): McpServerConfig | null {
   };
 }
 
+/** Validate the desktop/server wire boundary and strip derived or unknown
+ * fields before persistence. Disk loading remains tolerant for forward-only
+ * compatibility; an interactive save must instead explain malformed input. */
+export function normalizeForgeConfig(value: unknown): ForgeConfig {
+  if (!value || typeof value !== "object") throw new Error("config must be an object");
+  const input = value as Record<string, unknown>;
+  if (!Array.isArray(input.providers)) throw new Error("providers must be an array");
+  const providers = input.providers.map((provider, index) => {
+    const validated = validateProvider(provider);
+    if (!validated) throw new Error(`invalid provider at index ${index}`);
+    return validated;
+  });
+  const providerIds = new Set<string>();
+  for (const provider of providers) {
+    if (providerIds.has(provider.id)) throw new Error(`duplicate provider id: ${provider.id}`);
+    providerIds.add(provider.id);
+  }
+
+  const rawMcpServers = input.mcpServers === undefined ? [] : input.mcpServers;
+  if (!Array.isArray(rawMcpServers)) throw new Error("mcpServers must be an array");
+  const mcpServers = rawMcpServers.map((server, index) => {
+    const validated = validateMcpServer(server);
+    if (!validated) throw new Error(`invalid MCP server at index ${index}`);
+    return validated;
+  });
+  const mcpIds = new Set<string>();
+  for (const server of mcpServers) {
+    if (mcpIds.has(server.id)) throw new Error(`duplicate MCP server id: ${server.id}`);
+    mcpIds.add(server.id);
+  }
+
+  const requestedDefault = typeof input.defaultProviderId === "string" ? input.defaultProviderId : null;
+  return {
+    version: 2,
+    providers,
+    defaultProviderId: providerIds.has(requestedDefault ?? "")
+      ? requestedDefault
+      : (providers[0]?.id ?? null),
+    mcpServers,
+  };
+}
+
 export async function saveForgeConfig(forgeHome: string, config: ForgeConfig): Promise<void> {
   const p = configPath(forgeHome);
   await mkdir(dirname(p), { recursive: true });

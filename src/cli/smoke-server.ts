@@ -52,9 +52,39 @@ async function main(): Promise<void> {
 
   try {
     // 1. Config round-trip.
-    const cfg = (await (await fetch(`${base}/config`, { headers: auth })).json()) as { providers: unknown[] };
+    const cfg = (await (await fetch(`${base}/config`, { headers: auth })).json()) as {
+      providers: unknown[];
+      defaultProviderId: string | null;
+      mcpServers: unknown[];
+    };
     console.log(`  config providers: ${(cfg.providers as unknown[]).length}`);
     ok = ok && Array.isArray(cfg.providers) && cfg.providers.length === 1;
+
+    // 1b. MCP settings reconcile the live capability catalog without a
+    // server restart. Registration must not spawn the configured process.
+    const hotConfig = {
+      ...cfg,
+      mcpServers: [{ id: "hot", command: process.execPath, args: ["-e", "process.exit(0)"], enabled: true }],
+    };
+    const hotSaved = await fetch(`${base}/config`, {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify(hotConfig),
+    });
+    const hotCatalog = await (await fetch(`${base}/plugins`, { headers: auth })).json() as {
+      plugins?: Array<{ id: string }>;
+    };
+    ok = ok && hotSaved.status === 200 && hotCatalog.plugins?.some((plugin) => plugin.id === "mcp.hot") === true;
+    const removedSaved = await fetch(`${base}/config`, {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ...cfg, mcpServers: [] }),
+    });
+    const removedCatalog = await (await fetch(`${base}/plugins`, { headers: auth })).json() as {
+      plugins?: Array<{ id: string }>;
+    };
+    ok = ok && removedSaved.status === 200 && removedCatalog.plugins?.some((plugin) => plugin.id === "mcp.hot") === false;
+    console.log(`  MCP hot catalog: add=${hotSaved.status}, remove=${removedSaved.status}`);
 
     // 2. Project registration.
     const proj = (await (

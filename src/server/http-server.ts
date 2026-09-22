@@ -5,13 +5,12 @@ import { ApprovalHub } from "./approval-hub.ts";
 import { ProjectsRegistry } from "./projects.ts";
 import { SessionManager } from "./session-manager.ts";
 import { isAuthorized, newToken, removeHandshake, writeHandshake } from "./auth.ts";
-import { loadForgeConfig, saveForgeConfig, PROVIDER_APIS } from "./config-store.ts";
+import { loadForgeConfig, PROVIDER_APIS } from "./config-store.ts";
 import type { ProviderApi } from "./config-store.ts";
 import { discoverModels } from "./model-discovery.ts";
 import { buildModel, modelThinkingLevels } from "./model-resolver.ts";
 import type { ThinkingLevel } from "../types.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
-import { createMcpPlugin, McpStdioClient } from "../plugins/mcp.ts";
 import { loadExternalPlugins } from "./external-plugins.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
@@ -65,14 +64,6 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     }
   }
   const startupConfig = await loadForgeConfig(opts.forgeHome);
-  for (const mcp of startupConfig.mcpServers ?? []) {
-    if (!mcp.enabled) continue;
-    plugins.register(createMcpPlugin({
-      id: mcp.id,
-      ...(mcp.name ? { name: mcp.name } : {}),
-      createClient: () => new McpStdioClient(mcp.command, mcp.args, mcp.cwd, mcp.env),
-    }));
-  }
   const manager = new SessionManager({
     forgeHome: opts.forgeHome,
     projects,
@@ -82,6 +73,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
     externalFiles,
     pluginLoadErrors: external.errors,
   });
+  await manager.initializeMcpPlugins(startupConfig.mcpServers ?? []);
   await manager.reconcileInterruptedSessions();
   const token = newToken();
 
@@ -478,8 +470,11 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
 
       if (req.method === "PUT" && url.pathname === "/config") {
         const body = await readBody(req);
-        await saveForgeConfig(opts.forgeHome, body as unknown as Parameters<typeof saveForgeConfig>[1]);
-        json(res, 200, await loadForgeConfig(opts.forgeHome));
+        try {
+          json(res, 200, await manager.updateConfig(body));
+        } catch (err) {
+          json(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        }
         return;
       }
 

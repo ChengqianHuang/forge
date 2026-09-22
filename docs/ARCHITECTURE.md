@@ -89,6 +89,13 @@ disposed status. Required failures are shown as mechanism degradation, while
 optional failures are shown as isolated and do not stop the agent loop. No
 automatic retry or parallel health store is introduced.
 
+Configured MCP adapters use catalog reconciliation rather than run-time
+replacement. A settings save validates and atomically persists normalized
+config, then replaces changed registrations; a reconciliation failure restores
+both the previous catalog and disk config. Registration never starts an MCP
+process. Live session hosts own already-activated clients independently, so only later
+session activations observe the new definition.
+
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
 second decision under its own guard id. The desktop audit panel folds those

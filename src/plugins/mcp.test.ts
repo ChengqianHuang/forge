@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMcpPlugin, McpStdioClient, mcpChildEnvironment, type McpClient } from "./mcp.ts";
+import { PluginRegistry } from "./registry.ts";
 
 test("MCP child environment drops ambient secrets but keeps explicit server config", () => {
   assert.deepEqual(
@@ -26,6 +27,39 @@ test("MCP plugin discovers tools, preserves provenance and closes with the sessi
   assert.deepEqual(result.details, { server: "demo", tool: "lookup", result: { name: "lookup", args: {} } });
   await instance.dispose?.();
   assert.equal(closed, true);
+});
+
+test("a failing MCP adapter is visible and does not block healthy adapters", async () => {
+  let failedClientClosed = false;
+  const failing: McpClient = {
+    connect: async () => { throw new Error("MCP unavailable"); },
+    listTools: async () => [],
+    callTool: async () => ({}),
+    close: async () => { failedClientClosed = true; },
+  };
+  const healthy: McpClient = {
+    connect: async () => {},
+    listTools: async () => [{ name: "healthy_tool", inputSchema: { type: "object", properties: {} } }],
+    callTool: async () => "ok",
+    close: async () => {},
+  };
+  const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+  const registry = new PluginRegistry();
+  registry.register(createMcpPlugin({ id: "bad", client: failing }));
+  registry.register(createMcpPlugin({ id: "good", client: healthy }));
+  const host = await registry.activate({
+    session: { id: "mcp-test", approvalMode: "default" },
+    signal: new AbortController().signal,
+    emitEvent: async (type: string, payload: Record<string, unknown>) => { events.push({ type, payload }); },
+    enqueueSteering: () => {},
+    requestCompaction: () => {},
+  } as never);
+  assert.equal(failedClientClosed, true);
+  assert.equal(host.capabilities().plugins.find((plugin) => plugin.id === "mcp.bad")?.status, "failed");
+  assert.equal(host.capabilities().plugins.find((plugin) => plugin.id === "mcp.good")?.status, "active");
+  assert.deepEqual(host.tools().map((tool) => tool.name), ["healthy_tool"]);
+  assert.equal(events.some((event) => event.type === "PLUGIN_FAILED" && event.payload.pluginId === "mcp.bad"), true);
+  await host.dispose();
 });
 
 test("MCP close escalates and remains bounded when SIGTERM is ignored", async () => {

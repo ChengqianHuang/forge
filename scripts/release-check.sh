@@ -60,6 +60,7 @@ check "approval-hub tests"    "cd $ROOT && node --import tsx --test src/server/a
 check "session lifecycle tests" "cd $ROOT && node --import tsx --test src/server/session-manager-lifecycle.test.ts"
 check "config-store tests"   "cd $ROOT && node --import tsx --test src/server/config-store.test.ts"
 check "plugin preference tests" "cd $ROOT && node --import tsx --test src/server/plugin-preferences.test.ts"
+check "MCP hot reload tests" "cd $ROOT && node --import tsx --test src/server/mcp-plugin-sync.test.ts"
 check "external plugin tests" "cd $ROOT && node --import tsx --test src/server/external-plugins.test.ts"
 check "plugin install tests" "cd $ROOT && node --import tsx --test src/server/plugin-install.test.ts"
 check "model discovery tests" "cd $ROOT && node --import tsx --test src/server/model-discovery.test.ts"

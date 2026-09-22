@@ -54,8 +54,8 @@ import {
 import { ApprovalHub } from "./approval-hub.ts";
 import { ProjectsRegistry } from "./projects.ts";
 import { buildModel, makeStreamFnWithKey, providerEnv } from "./model-resolver.ts";
-import { loadForgeConfig, resolveProvider } from "./config-store.ts";
-import type { ProviderConfig } from "./config-store.ts";
+import { loadForgeConfig, normalizeForgeConfig, resolveProvider, saveForgeConfig } from "./config-store.ts";
+import type { ForgeConfig, McpServerConfig, ProviderConfig } from "./config-store.ts";
 import type {
   Session,
   SessionStatus,
@@ -79,6 +79,7 @@ import {
   type PluginSourceInfo,
 } from "./plugin-install.ts";
 import { readdir, unlink } from "node:fs/promises";
+import { McpPluginSync } from "./mcp-plugin-sync.ts";
 
 /**
  * Everything that exists only while one run of a session is live. Keeping it
@@ -167,6 +168,8 @@ export class SessionManager {
   private runtimes = new Map<string, SessionRuntime>();
   private readonly plugins: PluginRegistry;
   private readonly pluginInstaller = new PluginInstallCoordinator();
+  private readonly mcpPlugins: McpPluginSync;
+  private configUpdateChain: Promise<void> = Promise.resolve();
   private readonly externalPluginIds: Set<string>;
   /** pluginId → file name inside <forgeHome>/plugins, for uninstall. */
   private readonly externalFiles = new Map<string, string>();
@@ -189,9 +192,39 @@ export class SessionManager {
     },
   ) {
     this.plugins = opts.plugins ?? createBuiltinPluginRegistry();
+    this.mcpPlugins = new McpPluginSync(this.plugins);
     this.externalPluginIds = new Set(opts.externalPluginIds ?? []);
     for (const { id, fileName } of opts.externalFiles ?? []) this.externalFiles.set(id, fileName);
     this.pluginLoadErrors = opts.pluginLoadErrors ?? [];
+  }
+
+  /** Populate the MCP catalog at startup without activating any server. */
+  async initializeMcpPlugins(configs: readonly McpServerConfig[]): Promise<void> {
+    await this.mcpPlugins.reconcile(configs);
+  }
+
+  /** Atomically apply a desktop config update to the live MCP catalog and
+   * disk. Updates are serialized so concurrent saves cannot interleave their
+   * registry mutations. Validation or persistence failure leaves the catalog
+   * untouched; a later reconciliation failure rolls both layers back. */
+  updateConfig(input: unknown): Promise<ForgeConfig> {
+    const update = async () => {
+      const next = normalizeForgeConfig(input);
+      const previous = await loadForgeConfig(this.opts.forgeHome);
+      this.mcpPlugins.validate(next.mcpServers ?? []);
+      await saveForgeConfig(this.opts.forgeHome, next);
+      try {
+        await this.mcpPlugins.reconcile(next.mcpServers ?? []);
+      } catch (error) {
+        await this.mcpPlugins.reconcile(previous.mcpServers ?? []).catch(() => {});
+        await saveForgeConfig(this.opts.forgeHome, previous).catch(() => {});
+        throw error;
+      }
+      return next;
+    };
+    const task = this.configUpdateChain.then(update, update);
+    this.configUpdateChain = task.then(() => {}, () => {});
+    return task;
   }
 
   /** Repair sessions left in `running` by a previous process. The failed

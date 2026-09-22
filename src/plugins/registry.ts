@@ -275,7 +275,10 @@ export class PluginRegistry {
     const commandOwners = new Map<string, string>();
     const toolOwners = new Map<string, string>();
 
-    for (const plugin of this.plugins.values()) {
+    // Freeze registration membership at activation start. Catalog hot reloads
+    // may run while async plugin activation is awaiting I/O; a live Map
+    // iterator would otherwise splice old and new definitions into one host.
+    for (const plugin of [...this.plugins.values()]) {
       if (
         options?.capabilities &&
         !plugin.manifest.capabilities.some((capability) => options.capabilities!.has(capability))

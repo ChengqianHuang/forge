@@ -292,6 +292,32 @@ describe("PluginRegistry", () => {
     assert.throws(() => registry.register(plugin), /already registered/);
   });
 
+  test("freezes catalog membership when session activation starts", async () => {
+    const registry = new PluginRegistry();
+    let release!: () => void;
+    let started!: () => void;
+    const activationStarted = new Promise<void>((resolve) => { started = resolve; });
+    const activationRelease = new Promise<void>((resolve) => { release = resolve; });
+    registry.register({
+      manifest: { id: "test.slow-start", name: "slow", version: "1", capabilities: ["tool"] },
+      activate: async () => {
+        started();
+        await activationRelease;
+        return {};
+      },
+    });
+    const activating = registry.activate(context([]));
+    await activationStarted;
+    registry.register({
+      manifest: { id: "test.late", name: "late", version: "1", capabilities: ["tool"] },
+      activate: () => ({}),
+    });
+    release();
+    const host = await activating;
+    assert.deepEqual(host.capabilities().plugins.map((plugin) => plugin.id), ["test.slow-start"]);
+    await host.dispose();
+  });
+
   test("isolates a crashing subscriber and keeps other plugins alive", async () => {
     const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
     let healthyCalls = 0;

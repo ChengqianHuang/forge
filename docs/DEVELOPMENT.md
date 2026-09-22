@@ -31,7 +31,7 @@ bash scripts/release-check.sh
 It covers server and desktop type checking, Rust sidecar compilation and
 formatting, vendored Pi integrity, persistence, event ordering, guardrails,
 recovery, compaction, the internal registry, HTTP smokes, harness reliability
-invariants and benchmark goldens.
+invariants, MCP catalog hot-reload isolation and benchmark goldens.
 
 For a read-only report over persisted sessions:
 

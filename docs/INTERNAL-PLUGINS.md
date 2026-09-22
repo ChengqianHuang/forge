@@ -231,7 +231,7 @@ into the agent event log.
 
 MCP is an integration transport, not an external Forge-plugin ecosystem.
 Enabled stdio servers are configured in Desktop Settings and registered as
-Forge-owned adapters at server startup. Session activation performs
+Forge-owned adapters at startup or the next settings save. Session activation performs
 `initialize` and `tools/list`; discovered tools join Pi's normal tool list and
 therefore pass through the same `beforeToolCall` guard.
 
@@ -240,15 +240,21 @@ child process. A crashed server reconnects before a later, fresh invocation;
 Forge never automatically retries an uncertain in-flight mutating call. Tool
 result details retain MCP server and tool provenance.
 
+Saving MCP settings reconciles the live capability catalog without restarting
+Forge. Reconciliation only registers plugin factories; it does not spawn or
+probe the configured process. New sessions activate the latest enabled
+definition. A session that already activated an MCP plugin retains that exact
+client and tool set until its normal disposal, even if the server is edited,
+disabled or removed meanwhile. This avoids replacing an in-flight transport or
+retrying an uncertain mutation. Invalid/duplicate ids and capability conflicts
+are rejected at the config boundary instead of partially updating the catalog.
+
 MCP child processes inherit ordinary launch variables but not ambient values
 whose names indicate credentials, tokens, passwords, secrets or keys. A server
 may still receive a credential explicitly configured for that server. Disposal
 sends a graceful termination signal, waits for exit and escalates if needed.
 Both waits are bounded; after the final deadline Forge detaches the stdio
 handles so a broken child lifecycle cannot pin server shutdown.
-
-Settings changes to MCP server definitions currently take effect after Forge
-restarts. Hot replacement is not implemented.
 
 The generated [`capability-seams.md`](capability-seams.md) is the machine-checked
 map of every capability's runtime contributions (hooks through the kernel
