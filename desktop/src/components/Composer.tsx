@@ -81,7 +81,7 @@ export function Composer({ projectId }: { projectId?: string | null }) {
                 placement="above"
               />
             </div>
-            <button className="btn btn-primary btn-small" onClick={submit} disabled={!goal.trim() || loading}>
+            <button className="btn btn-primary" onClick={submit} disabled={!goal.trim() || loading}>
               {loading ? "Starting…" : "Start"}
               <span className="key-hint">↵</span>
             </button>
