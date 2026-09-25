@@ -44,3 +44,15 @@ node scripts/smoke-web-release.mjs
 The smoke extracts the archive into a fresh directory, installs only
 production dependencies, starts the packaged server with a fresh data
 directory and checks the page, JavaScript asset and authenticated API.
+
+## Maintainer release checklist
+
+Release from `main` only after choosing a version and reviewing the complete
+diff. Update the package version and lockfile together. Run the release gate;
+its smoke rebuilds and clean-installs an archive from the current tree. Build
+the final archive from that unchanged tree, inspect its contents (including
+`INSTALL.md`, built `desktop/dist` assets, Forge source and tracked Pi package
+`dist` files), and compute its checksum. Only then tag the commit and attach
+that archive and checksum to a GitHub Release. A successful source checkout or
+dev preview is not release evidence. Releasing `main` does not update or tag
+`master`.

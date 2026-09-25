@@ -24,9 +24,9 @@ npm run reliability -- session_123
 npm run reliability -- --json
 ```
 
-The same projection is available in the desktop session header under
+The same projection is available in the workbench session header under
 **诊断**. The required `forge.reliability` capability declares the button and
-its `metrics` read action. The desktop invokes that action through the generic
+its `metrics` read action. The workbench invokes that action through the generic
 capability-read endpoint, which recomputes from the current log on every
 request. Running and terminal sessions can therefore be inspected without
 creating mutable telemetry state or a reliability-specific kernel route.

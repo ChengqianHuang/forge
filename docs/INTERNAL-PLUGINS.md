@@ -24,13 +24,13 @@ supports:
 - session-scoped services;
 - stateless, user-initiated read actions;
 - stateful user interactions (bounded requests plus long-lived streams);
-- small capability descriptors consumed by the desktop.
+- small capability descriptors consumed by the workbench.
 
 UI descriptors declare a stable contribution id, label, surface and renderer
-key. The desktop maps renderer keys through one compiled-in registry; session
+key. The workbench maps renderer keys through one compiled-in registry; session
 components do not contain branches for individual capability ids.
 
-A UI descriptor may bind to a manifest-declared read action. The desktop calls
+A UI descriptor may bind to a manifest-declared read action. The workbench calls
 the generic `GET /sessions/:id/capabilities/:pluginId/read/:actionId` route;
 the registry validates the capability and action while the plugin owns input
 validation and result semantics. A manifest cannot declare read actions
@@ -94,7 +94,7 @@ are caught, recorded and isolated to that capability in that session.
 
 Each live host exposes `active`, `disabled`, `failed` or `disposed` for every
 capability. `GET /sessions/:id/capabilities` returns that session-owned
-snapshot; the desktop also folds `PLUGIN_*` events so reconnects and failures
+snapshot; the workbench also folds `PLUGIN_*` events so reconnects and failures
 do not leave a stale checkbox behind.
 
 Activation is transactional at the capability boundary: if contribution
@@ -112,7 +112,7 @@ required boundary existed.
 
 ### Global preferences and config (the manager page)
 
-The desktop plugin manager page (`GET /plugins`,
+The workbench plugin manager page (`GET /plugins`,
 `POST /plugins/:id/enabled`, `PUT /plugins/:id/config`) operates on the
 **global layer**, persisted in `<forgeHome>/plugin-prefs.json`:
 
@@ -146,20 +146,20 @@ not provide.
 - `/status`: reports persisted session status, model and message count.
 - `/context`: reports the context watermark and cumulative token counters.
 
-The desktop discovers command descriptors from the server and renders slash
+The workbench discovers command descriptors from the server and renders slash
 suggestions. Command output is persisted and appears in the session timeline;
 the command text is not sent to the model as a user prompt.
 
 ### Usage
 
 The usage subscriber consumes assistant `message_end` events, updates its
-session tracker and emits `USAGE_UPDATE` for the desktop token meter. It exposes
+session tracker and emits `USAGE_UPDATE` for the workbench token meter. It exposes
 the tracker as a session service used by compaction. If it is unavailable, the
 runner substitutes an inert tracker and continues.
 
 ### Harness reliability
 
-The required reliability capability contributes the desktop **诊断** action
+The required reliability capability contributes the workbench **诊断** action
 and a stateless `metrics` read action. It derives lifecycle, guard coverage,
 approval, cancellation, recovery and plugin-failure measurements directly from
 the session event log. It owns no telemetry store and never evaluates generated
@@ -172,7 +172,7 @@ declared read action was requested.
 
 ### Capability health
 
-The required capability-health module owns the desktop lifecycle panel and the
+The required capability-health module owns the workbench lifecycle panel and the
 optional-capability enable/disable control. It renders the current registry
 snapshot together with the ordered `PLUGIN_*` facts already folded from SSE;
 there is no health database and no polling protocol.
@@ -199,7 +199,7 @@ the agent acts and emits `WORKSPACE_CHANGES` when the run ends. The snapshot
 lists current net changes, line counts and whether a dirty path existed before
 the session; it never attributes a preexisting edit to the agent.
 
-Its manifest registers a session-header UI contribution. The desktop renderer
+Its manifest registers a session-header UI contribution. The workbench renderer
 shows the latest persisted snapshot and requests the current diff only when the
 user selects a file. The diff read remains available after the plugin's runtime
 resources are disposed. Non-Git workspaces emit an explicit unsupported state
@@ -275,7 +275,7 @@ The registry writes `PLUGIN_LOADED`, `PLUGIN_ENABLED`, `PLUGIN_DISABLED`,
 log as the agent. Individual capabilities may add owned projection events such
 as `WORKSPACE_CHANGES`; they still use that one log and SSE path.
 `PLUGIN_DISABLED` means a user pause; failure isolation has its own unambiguous
-`PLUGIN_FAILED` fact. The desktop never consumes a separate plugin event
+`PLUGIN_FAILED` fact. The workbench never consumes a separate plugin event
 channel.
 
 ## External plugins
@@ -293,7 +293,7 @@ server start; changes apply on restart.
 
 ### Install flow (添加插件 wizard)
 
-External plugins are trusted in-process code, not passive data. The desktop
+External plugins are trusted in-process code, not passive data. The workbench
 requires an explicit trust acknowledgement before inspection and says plainly
 that inspection executes module code as the current user. Forge does not claim
 that manifest validation is a sandbox or a security review.

@@ -35,6 +35,20 @@ embeds a per-process bearer token in the HTML and does not enable cross-origin
 API access. Browser project selection supplies a local absolute path because
 web pages cannot provide the server with a native folder-picker result.
 
+`npm start` runs `src/cli/serve.ts`: it locates `desktop/dist`, starts the HTTP
+server and opens the browser unless `--no-open` is set. The name `desktop/` is
+the historical source directory for the React workbench; it is also the web
+asset build on `main`, not a separate desktop runtime. The release archive
+contains built assets, Forge source and the vendored Pi workspace packages;
+its clean-install smoke proves that it does not depend on the source checkout.
+
+The trust boundary is deliberately local. The server has the user's file and
+tool privileges; the token is handed to a page served by that same process and
+also recorded in a permission-restricted local handshake file. Loopback,
+same-origin checks and the token gate protect this local workflow, but are not
+remote-user authentication. Public binding or reverse proxying is not a
+supported configuration.
+
 Ordinary TypeScript modules are not services. The compiler is their contract;
 they do not need protocol versions or migration layers.
 
@@ -44,8 +58,9 @@ they do not need protocol versions or migration layers.
    reasoning effort and approval posture.
 2. `SessionManager` persists the session and creates one live runtime object.
 3. Forge activates its compiled-in capabilities for that session.
-4. `runAgent` builds Pi coding tools, adds internal tool contributions, composes
-   the six hooks and calls `agentLoop`.
+4. `runAgent` builds Pi coding tools, adds capability tool contributions,
+   composes five kernel hooks and any contributed sixth (`transformContext`)
+   slot, then calls `agentLoop`.
 5. Pi streams agent events. Forge writes mapped events to JSONL in FIFO order.
 6. SSE replays and tails that log; the workbench folds it into one ordered
    conversation timeline.

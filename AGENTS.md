@@ -2,11 +2,10 @@
 
 ## 1. Purpose
 
-This document defines the development rules for AI coding agents working on Forge.
-
-The purpose is to prevent architectural drift during development.
-
-Every implementation decision must respect these rules.
+This document defines the non-negotiable development rules for agents
+working on Forge. Read `docs/README.md` for the current design and
+`docs/ENGINEERING-STANDARDS.md` for the change checklist. Code and tests decide
+implementation details; update documentation when those details change.
 
 ---
 
@@ -20,7 +19,9 @@ Forge is not:
 
 Forge is:
 
-A local Web Server engineering agent that uses LLM as brain and deterministic guardrails as safety net.
+A local Web Server engineering-agent platform that uses the LLM as its brain
+and deterministic guardrails as its safety net. The browser workbench is the
+user-facing surface; the server runs on the same machine as the projects.
 
 The core value of Forge is:
 
@@ -68,9 +69,9 @@ Pi is committed into this repo (`pi/`), directly modifiable, upstream optional. 
 
 The Forge/Pi seam above is a convenience, not a wall.
 
-- When Pi's internals are the cheaper path, modify Pi directly instead of building adapters in Forge (precedent: the `<think>` leak fix in Pi's openai-completions protocol).
+- When Pi's internals are the cheaper path, modify Pi directly instead of building adapters in Forge.
 - Keep `pi/` edits concentrated and recorded in docs, so optional upstream sync stays affordable. This is economics, not ideology.
-- Keep Pi's own test suites green — Pi's internal coherence protects the 300k+ lines we depend on.
+- Keep Pi's own test suites green — their internal coherence protects the vendored runtime.
 
 ## Monolith Principle
 
@@ -133,14 +134,9 @@ Discipline for crossing (economics, not purity):
 
 ### Rule 5.1
 
-The model is the strongest brain — its "done" IS done.
-(2026-09-12: the entire client-side completion-verification apparatus —
-trust levels, success criteria, the deterministic evaluator, the
-steer-back-on-fail loop and the verification panel — is retired. It
-second-guessed the model with brittle scripted checks and manufactured
-approval noise. What bounds a run is Rule 5.3 stuck detection, Rule 5.5
-error recovery, the approval gate on dangerous commands, and the user's
-Stop.)
+The model's "done" is done. Do not add a client-side completion judge,
+success-criteria evaluator or steer-back-on-failure loop. The run is bounded
+by approval, stuck detection, error recovery and the user's Stop.
 
 ### Rule 5.2
 
@@ -148,16 +144,13 @@ Every tool call is checked before execution.
 
 `beforeToolCall` hook:
 1. Guard policy (capability classification + rule evaluation)
-2. Write journal (backup file before write/edit — internal insurance that
-   justifies auto-allowing file writes; NOT a user-facing undo. The Diff/Undo
-   product surface was removed 2026-09-11: a partial undo that reads as
-   complete is worse than none. User-facing recovery = git + command approvals.
-   Backups remain on disk under `<forgeHome>/undo/<sessionId>/`, manually
+2. Write journal (backup file before write/edit; internal insurance, NOT a
+   user-facing Undo. Backups under `<forgeHome>/undo/<sessionId>/` are manually
    recoverable.)
 3. Approval relay (ask → workbench approval UI), gated by the session's approval
-   mode — `ask` (every mutation asks, the old behavior), `default` (safe
-   read-only bash whitelisted through, the rest asks; the new-session
-   default), `always` (nothing asks). The mode never relaxes a `deny`:
+   mode — `ask` (every mutation asks), `default` (safe read-only bash
+   whitelisted through, the rest asks; new-session default), `always` (nothing
+   asks). The mode never relaxes a `deny`:
    the destructive floor (sudo, rm -rf /, ...) holds in every mode. Live
    switchable per session (`POST /sessions/:id/approval`), takes effect at
    the next tool call.
@@ -174,29 +167,23 @@ Stuck detection prevents infinite loops.
 - alternating pattern A→B→A→B (6 times)
 
 `shouldStopAfterTurn` detects:
-- agent monologue without tool calls (4 consecutive turns) — task sessions
-  every session — there is no conversation kind to exempt (PM, 2026-09-12:
-  不做分流，所有输入都进执行型 agent; the old conversation exemption is retired)
+- agent monologue without tool calls (4 consecutive turns, every session)
 
 All four terminate the session with an honest `failureReason`
 (`stuck detected: ...`), never a silent "completed".
 
 ### Rule 5.4
 
-Usage and context are measured, not budgeted (2026-09-11: the client-side
-cost budget was removed — price estimation was blind for custom endpoints
-and no UI path ever set a budget, so the breaker never fired).
+Usage and context are measured, not budgeted.
 
 `UsageTracker` accumulates per-session token counters and keeps the context
 watermark (`lastContextTokens`); `prepareNextTurn` reads the watermark — and the
-transcript's own estimate — to trigger compaction. Spend limits belong to the provider. There is no
-client-side budget of any kind (the turn budget was retired 2026-09-12 — like
-the cost budget, it had no UI entry and therefore never fired): what bounds a
-run is the stuck guard, the model's own completion, and the user's Stop.
+transcript's own estimate — to trigger compaction. Spend limits belong to the
+provider. There is no client-side cost or turn budget.
 
 ### Rule 5.5
 
-Errors are recovered transparently (参考 Claude Code).
+Errors are recovered transparently.
 
 `shouldStopAfterTurn` attempts recovery before surfacing errors:
 - Output truncated → inject "continue" steering → retry (max 3)
@@ -208,9 +195,7 @@ This is the error withholding pattern: recovery succeeds = user never sees the e
 
 ### Rule 5.6
 
-Context is bounded, not cache-engineered (2026-09-11: honest scope statement —
-the Claude-Code-style prompt-cache strategy below was aspirational and is NOT
-implemented; do not re-add it to this document until it ships).
+Context is bounded, not cache-engineered.
 
 Context is bounded by exactly one mechanism: Pi's compaction via
 `prepareNextTurn`, triggered on **either** provider-reported per-turn usage
@@ -219,8 +204,7 @@ Context is bounded by exactly one mechanism: Pi's compaction via
 *outgoing request* — which a plugin's `transformContext` may legitimately shrink,
 and extensions are free to do that — and is simply absent on endpoints that
 never report it. The estimate is the floor the kernel's promise stands on.
-The kernel installs no `transformContext`
-(removed 2026-09-18): a per-request transform rewrote the outgoing prompt
+The kernel installs no `transformContext`: a per-request transform can rewrite the outgoing prompt
 without touching the transcript, so the live context and the recorded one could
 disagree — and because the provider then reported the *truncated* size, it also
 held the compaction trigger below its own threshold. Multi-tier context
@@ -326,10 +310,12 @@ do not need to use the API or event log directly.
 
 UI determines what Forge can do. A guardrail capability without a UI entry point does not exist for the user.
 
-The Web Server release binds to 127.0.0.1 only. Browser traffic is same-origin,
-the session token is delivered only in the local workbench HTML, and a clean
-archive install must boot without the source checkout. Internet-facing access
-is a separate product and security decision.
+The Web Server release binds to `127.0.0.1` only. Browser traffic is
+same-origin; the per-process token is injected into local workbench HTML and
+stored in a local handshake file. Treat a process on the same machine and a
+page with access to that HTML as trusted. Keep Host/Origin checks, the token
+gate and archive-install smoke coverage. Remote access or a public proxy
+requires a separate security design; do not silently broaden the bind address.
 
 ### Rule 9.2
 
@@ -337,15 +323,15 @@ Every guardrail must have a UI entry point.
 
 | Guardrail | UI component |
 |---|---|
-| Guard ask (approval) | ApprovalDialog (real-time popup) + 审批 level in the run picker (每次询问 / 默认 / 始终允许) |
+| Guard ask (approval) | Inline `ApprovalPanel` in the session + approval level in the run picker (每次询问 / 默认 / 始终允许) |
 | Usage & context | header token meter (↑in ↓out · ctx watermark) |
 | Stuck detection | In-place notice in the transcript |
 | Steering | Mid-run input box |
 | Streaming | SessionView (real-time conversation) |
 | Context compaction | In-place notice on COMPACTION |
-| Session management | SessionList + StatusBar |
-| Harness reliability | Registered session-header contribution + event-derived diagnostics modal |
-| Workspace changes | Registered session-header contribution + Git change/diff modal |
+| Session management | Sidebar session list + `SessionView` status and Stop/Resume controls |
+| Harness reliability | Registered session-header contribution + event-derived diagnostics panel |
+| Workspace changes | Registered session-header contribution + Git change/diff panel |
 | Project/workspace | Sidebar + project selector |
 | Model config | SettingsPage |
 | Run config (subscription + thinking) | ModelPicker popover — one trigger in Composer (new session) and in SessionView (mid-session); both switch live |
@@ -385,8 +371,7 @@ Which levels a subscription actually supports comes from Pi's
 catalog entry first (`{ ...catalog, ... }`) — rebuilding the object by hand
 drops `thinkingLevelMap`/`compat`, and the adapter then cannot translate levels.
 
-**UI coding standard (2026-09-19, established from the quality bar of the
-session-inspection surfaces):** visual and theme styling lives in
+**UI coding standard:** visual and theme styling lives in
 `styles.css` as semantic classes — no inline `style={{}}` for colors, borders,
 typography or state; state is expressed with `data-*` attributes
 (`data-status`, `data-on`, `data-confirming`) and selected in CSS. Inline
@@ -437,15 +422,9 @@ existing Resume path available without inventing a second live runtime.
 
 ### Rule 9.3
 
-Guardrails and UI are designed together.
-
-Build order:
-1. Agent runner (Pi loop + hooks)
-2. Guardrails + event types + HTTP API (同期 — 护栏产出事件，API 传输事件，UI 消费事件)
-3. Stuck detection
-4. Browser workbench (consume event stream + collect user input)
-5. Recovery + compaction + steering
-6. Benchmark
+Guardrails and UI are designed together. A new guardrail needs a policy or
+hook, persisted evidence, HTTP/SSE transport, a truthful workbench projection
+and tests across the affected boundary. See `docs/ENGINEERING-STANDARDS.md`.
 
 ---
 
@@ -460,6 +439,11 @@ Before implementing any feature, answer:
 5. What is the output?
 6. What events are produced?
 7. How is it tested?
+
+Also identify the target release line before editing. On `main`, verify the
+local Web Server path and installed archive when packaging or startup changes.
+On `master`, use that branch's desktop-specific checks. Do not assume a fix on
+one line automatically reaches the other.
 
 ---
 
@@ -497,9 +481,13 @@ Prefer:
 
 ## Branch discipline
 
-`main` is the local Web Server release line. `master` is the separate desktop
-line and remains the GitHub default branch. Both started from v1.1.0.
+`main` is the local Web Server release line and the GitHub default branch.
+`master` is the separate desktop line. Both started from v1.1.0.
 Shared kernel fixes must be deliberately ported between them.
+
+Do not merge either release line wholesale into the other. Port shared fixes
+as reviewed commits, then run the affected line's verification. Do not tag or
+publish a release as a side effect of ordinary documentation work.
 
 Work on a short-lived branch (`feat/...`, `fix/...`) when the change crosses layers or touches the hook contract.
 

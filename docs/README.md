@@ -11,10 +11,13 @@ Read in this order:
 3. [Guardrails](GUARDRAILS.md) — what Forge constrains and why.
 4. [Plugin platform](INTERNAL-PLUGINS.md) — how built-in and user-installed capabilities attach.
 5. [Harness reliability](RELIABILITY.md) — event-derived kernel measurements.
-6. [Development](DEVELOPMENT.md) — change discipline and verification.
+6. [Engineering standards](ENGINEERING-STANDARDS.md) — change contract and boundary checklist.
+7. [Development](DEVELOPMENT.md) — local workflow and verification.
+8. [Web Server release](WEB-RELEASE.md) — installation and distribution.
 
 The repository-wide rules in [`AGENTS.md`](../AGENTS.md) are authoritative when
-they conflict with prose here.
+they conflict with prose here. `docs/capability-seams.md` is generated from the
+registry; regenerate it with `npm run gen:seams` rather than editing it.
 
 ## Product position
 

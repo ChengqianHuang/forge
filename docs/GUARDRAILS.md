@@ -4,9 +4,9 @@ Forge trusts model judgment about what to do and when it is done. It constrains
 actions before they affect the user's machine and terminates mechanically bad
 runtime behavior.
 
-## Six Pi hook slots
+## Kernel hooks and the optional sixth slot
 
-Forge composes these `AgentLoopConfig` callbacks:
+Forge supplies five `AgentLoopConfig` callbacks:
 
 | Hook | Forge responsibility |
 |---|---|
@@ -57,7 +57,7 @@ forms and write-capable output flags fall back to approval.
 The destructive deny floor applies in every mode. Unknown tools—including MCP
 tools without a specific allow rule—default to asking.
 
-The desktop Guard audit panel is a projection of these persisted decisions. It
+The workbench Guard audit panel is a projection of these persisted decisions. It
 does not re-evaluate old tool calls against today's policy, because that would
 rewrite history rather than inspect it.
 
