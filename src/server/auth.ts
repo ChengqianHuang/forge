@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { IncomingMessage } from "node:http";
 
@@ -22,6 +22,7 @@ export function newToken(): string {
 
 export async function writeHandshake(forgeHome: string, h: Handshake): Promise<void> {
   const p = handshakePath(forgeHome);
+  await mkdir(forgeHome, { recursive: true, mode: 0o700 });
   await writeFile(p, JSON.stringify(h, null, 2) + "\n", { mode: 0o600 });
   await chmod(p, 0o600).catch(() => {});
 }

@@ -18,10 +18,10 @@ they conflict with prose here.
 
 ## Product position
 
-Forge is a desktop engineering-agent platform. Built-in and user-installed
+Forge on `main` is a local Web Server engineering-agent platform. Built-in and user-installed
 capabilities share the same Forge attachment points. Openness means a documented
 Forge contract and explicit local/Git installation; it does not mean a central
 marketplace or compatibility with another agent framework.
 
 The LLM supplies judgment. Forge supplies behavioral constraints, durable
-records, recovery and a complete desktop workbench.
+records, recovery and a complete browser workbench.

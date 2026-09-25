@@ -29,19 +29,6 @@ jobs:
           npm install --no-audit --no-fund
           npm install --no-audit --no-fund --prefix desktop
 
-      # The release gate runs `cargo check`/`cargo fmt --check` in
-      # desktop/src-tauri (added in 05c0b3b). Tauri's Linux backend needs GTK,
-      # WebKit and GLib development packages — without them `glib-sys` cannot
-      # build and the gate fails on the runner while passing on macOS.
-      # Package set: Tauri v2 Linux prerequisites.
-      - name: Install Tauri Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential curl wget file pkg-config libssl-dev \
-            libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev libxdo-dev
-
       - name: Release verification
         env:
           FORGE_HOME: ${{ runner.temp }}/forge-home

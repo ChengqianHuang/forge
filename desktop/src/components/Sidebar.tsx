@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { store } from "../lib/store.ts";
 import { addProject } from "../lib/api.ts";
 import type { SessionStatus } from "../types.ts";
@@ -57,6 +57,10 @@ function PlusIcon() {
 }
 
 export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
+  const [showProjectPath, setShowProjectPath] = useState(false);
+  const [projectPath, setProjectPath] = useState("");
+  const [projectError, setProjectError] = useState("");
+  const [addingProject, setAddingProject] = useState(false);
   const sessions = store((s) => s.sessions);
   const activeId = store((s) => s.activeSessionId);
   const select = store((s) => s.select);
@@ -83,6 +87,11 @@ export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
   }
 
   async function onAddProject() {
+    if (!(window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+      setProjectError("");
+      setShowProjectPath(true);
+      return;
+    }
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const picked = await open({ directory: true, multiple: false, title: "选择项目文件夹" });
@@ -91,6 +100,23 @@ export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
       await switchProject(created.id);
     } catch (err) {
       console.error("add project failed:", err);
+    }
+  }
+
+  async function onSubmitProjectPath(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!projectPath.trim() || addingProject) return;
+    setAddingProject(true);
+    setProjectError("");
+    try {
+      const created = await addProject(projectPath.trim());
+      await switchProject(created.id);
+      setProjectPath("");
+      setShowProjectPath(false);
+    } catch (err) {
+      setProjectError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAddingProject(false);
     }
   }
 
@@ -121,6 +147,28 @@ export function Sidebar({ onNewSession }: { onNewSession: () => void }) {
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
+      {showProjectPath && (
+        <form className="side-project-form" onSubmit={(event) => void onSubmitProjectPath(event)}>
+          <label htmlFor="project-path">本机项目绝对路径</label>
+          <input
+            id="project-path"
+            className="input"
+            value={projectPath}
+            onChange={(event) => setProjectPath(event.target.value)}
+            placeholder="/Users/name/project"
+            autoFocus
+          />
+          {projectError && <p className="side-project-error" role="alert">{projectError}</p>}
+          <div className="side-project-actions">
+            <button className="btn btn-primary btn-small" disabled={addingProject || !projectPath.trim()}>
+              {addingProject ? "添加中…" : "添加"}
+            </button>
+            <button type="button" className="btn btn-quiet btn-small" onClick={() => setShowProjectPath(false)}>
+              取消
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="side-header-row side-header-sessions">
         <div className="side-section-label">会话</div>

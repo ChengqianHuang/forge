@@ -2,7 +2,7 @@
 
 ## Product statement
 
-Forge is a desktop engineering-agent platform for completing real work in a
+Forge is a local Web Server engineering-agent platform for completing real work in a
 user's workspace.
 
 The model supplies judgment. Pi supplies the agent loop and model runtime.
@@ -11,7 +11,7 @@ remain observable and recover from interruption.
 
 “Platform” has a precise meaning here: built-in and explicitly user-installed
 capabilities can share a stable session runtime, guardrails, event history and
-desktop surface without each feature modifying the agent loop. Forge owns the
+browser workbench without each feature modifying the agent loop. Forge owns the
 contract; openness does not require a central marketplace or compatibility with
 another agent framework.
 
@@ -63,9 +63,9 @@ attach through one internal registry. Capabilities receive a scoped session
 context, contribute through explicit extension points and release their
 resources when the session ends.
 
-### Complete desktop workbench
+### Complete browser workbench
 
-The desktop is the product surface, not an optional viewer. Configuration,
+The local browser workbench is the product surface. Configuration,
 execution, approvals, steering, status, failures and recovery must be usable
 without a CLI or knowledge of internal files.
 
@@ -78,7 +78,7 @@ The kernel owns mechanisms that must remain true for every session:
 - the non-relaxable safety floor;
 - ordered event persistence and crash recovery;
 - capability registration and session-scoped composition;
-- HTTP/SSE transport and the desktop application shell.
+- HTTP/SSE transport and the browser workbench shell.
 
 An internal capability owns removable product behavior, including commands,
 optional tools, event-driven projections and focused UI contributions.
@@ -113,7 +113,7 @@ session; this is cooperative failure containment inside one process, not a
 security sandbox.
 
 The compiler is the in-process contract. Versioning and migration discipline
-are reserved for real boundaries: desktop/server transport and persisted data.
+are reserved for real boundaries: browser/server transport and persisted data.
 
 ## Capability extension points
 
@@ -134,7 +134,7 @@ a comparable first-party client; the registry must not become speculative.
 
 Built-in registration is compiled in and reviewed with the rest of Forge.
 User-installed plugins may join the same registry from an explicit local or Git
-source. They use Forge's contract and compiled desktop renderers; Forge does not
+source. They use Forge's contract and compiled workbench renderers; Forge does not
 claim a compatibility layer for another framework or a security sandbox for
 in-process plugin code.
 
@@ -142,7 +142,7 @@ MCP remains a tool transport. An MCP server may supply tools, but it does not
 become part of Forge's internal capability model and does not bypass Forge's
 tool guardrails.
 
-## Desktop principles
+## Workbench principles
 
 The transcript is one ordered timeline of model text, tool activity, command
 output, guardrail decisions and session notices. Parallel histories that can
@@ -151,7 +151,7 @@ disagree with one another are not acceptable.
 User-facing controls keep independent concepts independent: model selection,
 reasoning effort and approval posture are separate axes. Running sessions can
 be steered and stopped. Every guardrail that affects the user has a visible
-entry point or outcome in the desktop.
+entry point or outcome in the browser workbench.
 
 The UI may project capability descriptors, but capabilities should not mount
 arbitrary application shells. Forge keeps one coherent workbench and one
@@ -167,7 +167,7 @@ Forge is not currently building:
 - a second implementation of Pi features;
 - deterministic completion verification;
 - client-side cost or turn budgets;
-- hidden automation with no desktop control or evidence.
+- hidden automation with no workbench control or evidence.
 
 These are product boundaries, not promises that the code can never change. A
 boundary moves only when a real user need justifies the additional mechanism.
@@ -176,7 +176,7 @@ boundary moves only when a real user need justifies the additional mechanism.
 
 Before adding a capability, answer:
 
-1. Which user problem does it solve in the desktop product?
+1. Which user problem does it solve in the workbench?
 2. Is it a Forge mechanism, a removable Forge capability or an existing Pi
    responsibility?
 3. What session scope and lifecycle does it require?
@@ -196,7 +196,7 @@ not expand the abstraction surface in advance. Registry lifecycle and
 session-scoped capability status, lifecycle inspection and guard-decision
 inspection are now established. Cancellation, bounded cleanup, honest restart repair and
 event-derived harness reliability metrics are now part of the recovery
-baseline. Further work should add real Forge capabilities driven by desktop
+baseline. Further work should add real Forge capabilities driven by workbench
 needs, using these measurements to protect the kernel without grading model
 intelligence.
 
@@ -213,5 +213,5 @@ Forge is behaving as a platform when:
 - every tool, command and terminal outcome remains ordered and explainable;
 - capability failures are contained, visible and recoverable where possible;
 - a crashed session retains enough durable state to resume honestly;
-- every user-relevant mechanism is operable from the desktop;
+- every user-relevant mechanism is operable from the browser workbench;
 - the release gate protects both Forge and the vendored Pi runtime.

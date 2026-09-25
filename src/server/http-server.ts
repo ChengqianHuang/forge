@@ -12,6 +12,7 @@ import { buildModel, modelThinkingLevels } from "./model-resolver.ts";
 import type { ThinkingLevel } from "../types.ts";
 import { createBuiltinPluginRegistry } from "../plugins/builtins/index.ts";
 import { loadExternalPlugins } from "./external-plugins.ts";
+import { isLocalWebRequest, serveWebAsset } from "./web-assets.ts";
 
 /** Pi's full thinking-level set — see pi-ai's ThinkingLevel / ModelThinkingLevel. */
 const THINKING_LEVEL_VALUES: ReadonlySet<string> = new Set([
@@ -32,6 +33,7 @@ export type ForgeServerOptions = {
   port: number;
   host?: string;
   forgeHome: string;
+  webRoot?: string;
 };
 
 export type ForgeServerHandle = {
@@ -43,6 +45,9 @@ export type ForgeServerHandle = {
 
 export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeServerHandle> {
   const host = opts.host ?? "127.0.0.1";
+  if (opts.webRoot && host !== "127.0.0.1") {
+    throw new Error("web mode must bind to 127.0.0.1");
+  }
   const projects = new ProjectsRegistry(opts.forgeHome);
   const approvalHub = new ApprovalHub();
   const plugins = createBuiltinPluginRegistry();
@@ -76,14 +81,23 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
   await manager.initializeMcpPlugins(startupConfig.mcpServers ?? []);
   await manager.reconcileInterruptedSessions();
   const token = newToken();
+  let listeningPort = opts.port;
 
   const server: Server = createServer(async (req: IncomingMessage, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const parts = url.pathname.split("/").filter(Boolean);
 
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-headers", "authorization, content-type");
-    res.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+    if (opts.webRoot) {
+      if (!isLocalWebRequest(req, `${host}:${listeningPort}`)) {
+        json(res, 403, { error: "local origin required" });
+        return;
+      }
+      if (await serveWebAsset(req, res, opts.webRoot, token)) return;
+    } else {
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-headers", "authorization, content-type");
+      res.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
+    }
     if (req.method === "OPTIONS") {
       res.writeHead(204).end();
       return;
@@ -537,6 +551,7 @@ export async function startForgeServer(opts: ForgeServerOptions): Promise<ForgeS
   await new Promise<void>((resolveP) => server.listen(opts.port, host, resolveP));
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : opts.port;
+  listeningPort = port;
   const url = `http://${host}:${port}`;
   await writeHandshake(opts.forgeHome, {
     protocolVersion: 1,

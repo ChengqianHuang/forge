@@ -5,7 +5,7 @@
 Forge has two layers in one monolithic repository:
 
 ```
-Desktop UI (React inside Tauri)
+Browser workbench (React, served by the local Forge process)
         │ HTTP commands + ordered SSE events
 Forge agent layer
   session manager · guardrails · event log · recovery · internal registry
@@ -26,22 +26,28 @@ tests and tracked build output must remain coherent.
 
 Only two boundaries require compatibility discipline:
 
-- Desktop ↔ server: HTTP and SSE, caused by Tauri's process model.
+- Browser ↔ local server: HTTP and SSE.
 - Code ↔ disk: session JSON and per-session JSONL event logs.
+
+The Web Server release serves the built React workbench from the same local
+HTTP origin as the API. It binds to 127.0.0.1, validates Host and Origin,
+embeds a per-process bearer token in the HTML and does not enable cross-origin
+API access. Browser project selection supplies a local absolute path because
+web pages cannot provide the server with a native folder-picker result.
 
 Ordinary TypeScript modules are not services. The compiler is their contract;
 they do not need protocol versions or migration layers.
 
 ## Session flow
 
-1. The desktop creates a session with a goal, project, model subscription,
+1. The workbench creates a session with a goal, project, model subscription,
    reasoning effort and approval posture.
 2. `SessionManager` persists the session and creates one live runtime object.
 3. Forge activates its compiled-in capabilities for that session.
 4. `runAgent` builds Pi coding tools, adds internal tool contributions, composes
    the six hooks and calls `agentLoop`.
 5. Pi streams agent events. Forge writes mapped events to JSONL in FIFO order.
-6. SSE replays and tails that log; the desktop folds it into one ordered
+6. SSE replays and tails that log; the workbench folds it into one ordered
    conversation timeline.
 7. On completion, failure, Stop or timeout, Forge persists terminal state and
    disposes the session runtime.
@@ -60,11 +66,11 @@ second deterministic completion judge.
   audit evidence. `Session.messages` is only its live Pi-facing projection.
 - EventBus: low-volume control-event fan-out after persistence; never an
   alternative source of truth.
-- Desktop store: a projection of server records and SSE events, not authority.
+- Workbench store: a projection of server records and SSE events, not authority.
 
-Compiled-in UI capabilities cross the desktop/server boundary as small
+Compiled-in UI capabilities cross the browser/server boundary as small
 descriptors (`surface` + `renderer`), returned with the session capability
-snapshot. The desktop resolves renderer keys through one registry. This keeps
+snapshot. The workbench resolves renderer keys through one registry. This keeps
 feature-specific buttons out of `SessionView` while preserving a reviewed,
 first-party component set rather than allowing arbitrary remote UI code.
 
@@ -82,7 +88,7 @@ run resources, so session deletion and server shutdown invoke separate cleanup
 hooks. The built-in session terminal proves this seam; neither SessionManager
 nor the HTTP router knows PTY operations.
 
-Capability lifecycle is projected by `forge.capability-health`. The desktop
+Capability lifecycle is projected by `forge.capability-health`. The workbench
 folds ordered `PLUGIN_*` events into current state plus an inspection history;
 the server capability snapshot supplies manifest metadata and truthful live or
 disposed status. Required failures are shown as mechanism degradation, while
@@ -98,7 +104,7 @@ session activations observe the new definition.
 
 Guard decisions follow the same rule. The core hook writes an attributed
 `GUARD_DECISION`, and any contributed guard that subsequently blocks writes a
-second decision under its own guard id. The desktop audit panel folds those
+second decision under its own guard id. The workbench audit panel folds those
 events by stable decision id. Its button and panel belong to the required
 `forge.guard-audit` UI capability; guard execution and durable evidence remain
 kernel-owned. Reconnect replay is idempotent and never invokes the policy

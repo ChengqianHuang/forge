@@ -16,9 +16,11 @@ loop, duplicate Pi features or turn in-process types into versioned protocols.
 
 ## Branches
 
-`master` must stay releasable. Cross-layer work and hook-contract changes use a
-short-lived `feat/...` or `fix/...` branch. Small, obviously green changes may
-land directly.
+`main` is the local Web Server release line. `master` remains the separate
+desktop line and the GitHub default branch. Both branches began from the same
+`v1.1.0` commit; shared kernel fixes must be deliberately ported between
+them. Cross-layer work still uses a short-lived `feat/...` or `fix/...` branch
+unless the user explicitly chooses a release line for the work.
 
 ## Required verification
 
@@ -28,10 +30,14 @@ Run the release gate from the repository root:
 bash scripts/release-check.sh
 ```
 
-It covers server and desktop type checking, Rust sidecar compilation and
-formatting, vendored Pi integrity, persistence, event ordering, guardrails,
+It covers server and UI type checking, vendored Pi integrity, persistence,
+event ordering, guardrails,
 recovery, compaction, the internal registry, HTTP smokes, harness reliability
-invariants, MCP catalog hot-reload isolation and benchmark goldens.
+invariants, MCP catalog hot-reload isolation, benchmark goldens and a clean
+Web Server archive install and startup.
+
+For the release archive and user installation steps, see
+[`WEB-RELEASE.md`](WEB-RELEASE.md).
 
 For a read-only report over persisted sessions:
 

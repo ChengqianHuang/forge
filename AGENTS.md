@@ -20,7 +20,7 @@ Forge is not:
 
 Forge is:
 
-A desktop engineering agent that uses LLM as brain and deterministic guardrails as safety net.
+A local Web Server engineering agent that uses LLM as brain and deterministic guardrails as safety net.
 
 The core value of Forge is:
 
@@ -42,7 +42,7 @@ Responsible for:
 - guardrails: permission, approval, stuck detection
 - event log + SSE streaming
 - crash recovery
-- HTTP API + desktop UI
+- HTTP API + browser workbench
 
 ## Runtime Layer (Pi)
 
@@ -77,7 +77,7 @@ The Forge/Pi seam above is a convenience, not a wall.
 Forge is a big monolith. In-process module boundaries are NOT protocol boundaries.
 
 - The compiler is the contract. No versioning, no migration, no deprecation windows for in-process types.
-- The only two real boundaries: desktop ↔ server (HTTP/SSE — a Tauri process-model detail, not a service boundary) and code ↔ disk (JSONL / session files — forward-only compatibility discipline applies here, and only here).
+- The only two real boundaries: browser ↔ local server (HTTP/SSE) and code ↔ disk (JSONL / session files — forward-only compatibility discipline applies here, and only here).
 - In-process event distribution uses the observer pattern (EventBus), justified by "publishers must not import subscriber modules" — not by "protocol independence".
 
 ---
@@ -154,7 +154,7 @@ Every tool call is checked before execution.
    complete is worse than none. User-facing recovery = git + command approvals.
    Backups remain on disk under `<forgeHome>/undo/<sessionId>/`, manually
    recoverable.)
-3. Approval relay (ask → desktop dialog), gated by the session's approval
+3. Approval relay (ask → workbench approval UI), gated by the session's approval
    mode — `ask` (every mutation asks, the old behavior), `default` (safe
    read-only bash whitelisted through, the rest asks; the new-session
    default), `always` (nothing asks). The mode never relaxes a `deny`:
@@ -291,7 +291,7 @@ The EventBus is a fan-out of the event log, not a second source of truth.
 
 `appendEvent` writes to the JSONL log, then fans out control-plane events (`isControlEvent`) to the in-process `defaultBus`. Data-plane events (TURN / MESSAGE / TEXT_DELTA / TOOL families) stay in the log only — in-process listeners must not be flooded by per-turn data volume.
 
-SSE and the desktop read the log, never the bus. Subscriber count today is zero: when a feature needs the bus, subscribe in the module that needs it — no new machinery, no protocol layers.
+SSE and the browser workbench read the log, never the bus. Subscriber count today is zero: when a feature needs the bus, subscribe in the module that needs it — no new machinery, no protocol layers.
 
 ---
 
@@ -321,9 +321,15 @@ When the data model changes, `schema.ts` adds a migration. Old sessions are migr
 
 UI is the only entry point.
 
-Users never touch CLI, API, or event log. Everything flows through the desktop UI.
+Users start the local server and use the browser workbench for agent work. They
+do not need to use the API or event log directly.
 
 UI determines what Forge can do. A guardrail capability without a UI entry point does not exist for the user.
+
+The Web Server release binds to 127.0.0.1 only. Browser traffic is same-origin,
+the session token is delivered only in the local workbench HTML, and a clean
+archive install must boot without the source checkout. Internet-facing access
+is a separate product and security decision.
 
 ### Rule 9.2
 
@@ -437,7 +443,7 @@ Build order:
 1. Agent runner (Pi loop + hooks)
 2. Guardrails + event types + HTTP API (同期 — 护栏产出事件，API 传输事件，UI 消费事件)
 3. Stuck detection
-4. Desktop UI (consume event stream + collect user input)
+4. Browser workbench (consume event stream + collect user input)
 5. Recovery + compaction + steering
 6. Benchmark
 
@@ -491,11 +497,13 @@ Prefer:
 
 ## Branch discipline
 
-`master` is always releasable (default branch since 2026-09-08; the old `main` is frozen).
+`main` is the local Web Server release line. `master` is the separate desktop
+line and remains the GitHub default branch. Both started from v1.1.0.
+Shared kernel fixes must be deliberately ported between them.
 
 Work on a short-lived branch (`feat/...`, `fix/...`) when the change crosses layers or touches the hook contract.
 
-Small, obviously-green changes go directly to `master`.
+Small, obviously-green changes may go directly to the affected release line.
 
 ---
 
@@ -516,7 +524,7 @@ Forge assembles AgentLoopConfig guardrails + capability contributions
     ↓
 Pi agentLoop queries the model and executes guarded tools
     ↓
-ordered events → persistence → SSE → desktop projection
+ordered events → persistence → SSE → browser projection
     ↓
 model done is accepted; session settles and resources are disposed
 ```

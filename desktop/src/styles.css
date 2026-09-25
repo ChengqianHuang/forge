@@ -229,6 +229,11 @@ body {
   transition: background 0.12s;
 }
 .side-trigger:hover { background: color-mix(in srgb, var(--bg-secondary) 95%, transparent); }
+.side-project-form { display: grid; gap: 7px; margin: 7px 6px 4px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.side-project-form label { color: var(--text-secondary); font-size: 11px; }
+.side-project-form .input { min-width: 0; }
+.side-project-actions { display: flex; align-items: center; gap: 4px; }
+.side-project-error { margin: 0; color: var(--red); font-size: 11px; overflow-wrap: anywhere; }
 
 .session-item {
   display: flex; align-items: center; gap: 8px;

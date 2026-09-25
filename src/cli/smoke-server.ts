@@ -6,6 +6,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startForgeServer, type ForgeServerHandle } from "../server/http-server.ts";
@@ -17,6 +18,10 @@ async function main(): Promise<void> {
   process.env.FORGE_EVENTS_DIR = join(forgeHome, "events");
   process.env.FORGE_SESSIONS_DIR = join(forgeHome, "sessions");
   const repoWorkspace = join(forgeHome, "workspace");
+  const webRoot = join(forgeHome, "web");
+  mkdirSync(join(webRoot, "assets"), { recursive: true });
+  writeFileSync(join(webRoot, "index.html"), "<html><head></head><body>Forge web smoke</body></html>");
+  writeFileSync(join(webRoot, "assets", "app.js"), "window.forgeLoaded=true;");
   mkdirSync(repoWorkspace, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repoWorkspace });
   writeFileSync(join(repoWorkspace, "tracked.txt"), "before\n");
@@ -45,12 +50,33 @@ async function main(): Promise<void> {
     port: 0,
     host: "127.0.0.1",
     forgeHome,
+    webRoot,
   });
   const auth = { authorization: `Bearer ${handle.token}` };
   const base = handle.url;
   let ok = true;
 
   try {
+    const page = await fetch(base);
+    const html = await page.text();
+    const script = await fetch(`${base}/assets/app.js`);
+    const blockedOrigin = await fetch(`${base}/config`, {
+      headers: { ...auth, origin: "https://example.invalid" },
+    });
+    const blockedHost = await new Promise<number>((resolve, reject) => {
+      const req = request(base, { headers: { host: "example.invalid" } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    ok = ok && page.status === 200 && html.includes("Forge web smoke")
+      && html.includes(handle.token) && page.headers.get("cache-control") === "no-store"
+      && script.status === 200 && (await script.text()).includes("forgeLoaded")
+      && blockedOrigin.status === 403 && blockedHost === 403;
+    console.log(`  web entry: page=${page.status}, asset=${script.status}, cross-origin=${blockedOrigin.status}, host-spoof=${blockedHost}`);
+
     // 1. Config round-trip.
     const cfg = (await (await fetch(`${base}/config`, { headers: auth })).json()) as {
       providers: unknown[];
